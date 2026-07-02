@@ -1,0 +1,18 @@
+project/
+├── main.py                  ← Entry point, runs the session
+├── config.py                ← All settings/thresholds in one place
+├── detection/
+│   ├── __init__.py
+│   ├── object_detector.py   ← Faster R-CNN class
+│   └── head_pose.py         ← MediaPipe Face Mesh class
+├── analysis/
+│   ├── __init__.py
+│   ├── temporal.py          ← Sliding window temporal analyzer class
+│   └── risk_classifier.py   ← Risk classification class
+├── monitoring/
+│   ├── __init__.py
+│   ├── session_report.py    ← Session logging & JSON export class
+│   └── evidence_capture.py  ← Screenshot capture class
+└── display/
+    ├── __init__.py
+    └── overlay.py           ← All OpenCV drawing/overlay logic

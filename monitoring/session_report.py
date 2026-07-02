@@ -47,13 +47,29 @@ class SessionReport:
     def __init__(self):
         self._session_start = datetime.now().isoformat()
         self._events: list[FlaggedEvent] = []
+        self._baseline_info: Optional[dict] = None
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
+    def set_baseline(self, yaw: float, pitch: float, roll: float,
+                      sample_count: int) -> None:
+        """
+        Record the calibration baseline used for this session, so the
+        report shows exactly what "normal" was defined as for this
+        examinee. Should be called once, right after calibration completes.
+        """
+        self._baseline_info = {
+            "yaw": round(yaw, 2),
+            "pitch": round(pitch, 2),
+            "roll": round(roll, 2),
+            "sample_count": sample_count,
+        }
+
     def log_event(self, risk_level: str, yaw: float, pitch: float, roll: float,
                   device_detected: bool, behavioral_indicator: str,
+                  trigger: str = "",
                   screenshot_path: Optional[str] = None) -> None:
         """Append a new flagged event to the session log."""
         event = FlaggedEvent(
@@ -66,6 +82,9 @@ class SessionReport:
             behavioral_indicator=behavioral_indicator,
             screenshot_path=screenshot_path,
         )
+        # Attach trigger description as an extra field if provided
+        if trigger:
+            event.__dict__["trigger"] = trigger
         self._events.append(event)
 
     def save(self, filepath: str) -> dict:
@@ -103,6 +122,7 @@ class SessionReport:
         return {
             "session_start":        self._session_start,
             "session_end":          datetime.now().isoformat(),
+            "calibration_baseline": self._baseline_info,
             "total_flagged_events": len(self._events),
             "high_risk_count":      high_count,
             "moderate_risk_count":  moderate_count,

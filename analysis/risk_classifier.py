@@ -4,16 +4,18 @@ analysis/risk_classifier.py — Graduated Risk Classification
 Online Assessment Monitoring System
 Holy Angel University — School of Computing
 
-Converts an aggregated TemporalSnapshot into one of three risk levels,
-matching the study's three-tier framework:
+Converts an aggregated TemporalSnapshot into one of three risk levels:
 
   LOW      — No sustained suspicious signals
   MODERATE — Either device OR head pose sustained alone (ambiguous)
-  HIGH     — Both signals co-occur persistently (strongest indicator)
+  HIGH     — Two possible triggers:
+               1. Both signals co-occur persistently (dual-modal)
+               2. Head pose alone sustained beyond stricter solo threshold
+                  (captures prolonged downward gaze without visible device)
 =============================================================================
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from config import TemporalConfig
 from analysis.temporal import TemporalSnapshot
 
@@ -21,37 +23,39 @@ from analysis.temporal import TemporalSnapshot
 @dataclass
 class RiskResult:
     """
-    Output of a risk classification decision.
+    Output of a single risk classification decision.
 
     Attributes:
-        level:    "LOW", "MODERATE", or "HIGH"
-        snapshot: The TemporalSnapshot the decision was based on
-        escalated: True if this call increased the risk level versus the
-                   previous classification (used to trigger event logging)
+        level:     "LOW", "MODERATE", or "HIGH"
+        snapshot:  The TemporalSnapshot the decision was based on
+        escalated: True if risk level increased versus the previous call
+        trigger:   Human-readable string describing what caused the level
     """
     level:     str
     snapshot:  TemporalSnapshot
     escalated: bool = False
+    trigger:   str  = ""
 
 
 class RiskClassifier:
     """
     Applies the study's three-tier risk classification rules to a
-    TemporalSnapshot.
+    TemporalSnapshot using time-weighted activation ratios.
 
     Usage:
         classifier = RiskClassifier()
         result = classifier.classify(snapshot)
         print(result.level)
+        print(result.trigger)
     """
 
-    # Risk levels ordered from lowest to highest, used to detect escalation
     _LEVEL_ORDER = {"LOW": 0, "MODERATE": 1, "HIGH": 2}
 
     def __init__(self):
-        self._moderate_threshold = TemporalConfig.MODERATE_TRIGGER_FRAMES
-        self._high_threshold     = TemporalConfig.HIGH_TRIGGER_FRAMES
-        self._last_level = "LOW"
+        self._moderate_ratio = TemporalConfig.MODERATE_TRIGGER_RATIO
+        self._high_ratio     = TemporalConfig.HIGH_TRIGGER_RATIO
+        self._head_only_high = TemporalConfig.HEAD_ONLY_HIGH_RATIO
+        self._last_level     = "LOW"
 
     # ------------------------------------------------------------------
     # Public API
@@ -59,40 +63,71 @@ class RiskClassifier:
 
     def classify(self, snapshot: TemporalSnapshot) -> RiskResult:
         """
-        Classify risk level based on the aggregated temporal snapshot.
+        Classify risk level from the temporal snapshot.
 
-        Rules:
-            HIGH:     both_count >= HIGH_TRIGGER_FRAMES
-            MODERATE: device_count or head_count >= MODERATE_TRIGGER_FRAMES
-            LOW:      otherwise
-
-        Args:
-            snapshot: Current TemporalSnapshot from the TemporalAnalyzer
+        Rules (checked in order of severity):
+            HIGH (dual-modal):  both_ratio  >= HIGH_TRIGGER_RATIO
+            HIGH (head-only):   head_ratio  >= HEAD_ONLY_HIGH_RATIO
+            MODERATE:           device_ratio or head_ratio >= MODERATE_TRIGGER_RATIO
+            LOW:                otherwise
 
         Returns:
-            RiskResult containing the level and whether it escalated
+            RiskResult with level, escalation flag, and trigger description
         """
-        level = self._determine_level(snapshot)
+        level, trigger = self._determine_level(snapshot)
         escalated = self._LEVEL_ORDER[level] > self._LEVEL_ORDER[self._last_level]
         self._last_level = level
 
-        return RiskResult(level=level, snapshot=snapshot, escalated=escalated)
+        return RiskResult(
+            level=level,
+            snapshot=snapshot,
+            escalated=escalated,
+            trigger=trigger,
+        )
 
     def reset(self) -> None:
-        """Reset internal escalation tracking (e.g. for a new session)."""
+        """Reset escalation tracking for a new session."""
         self._last_level = "LOW"
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _determine_level(self, snapshot: TemporalSnapshot) -> str:
-        """Pure decision logic, isolated for easy unit testing."""
-        if snapshot.both_count >= self._high_threshold:
-            return "HIGH"
+    def _determine_level(self, snapshot: TemporalSnapshot) -> tuple:
+        """
+        Pure decision logic — returns (level, trigger_description).
+        Kept separate for easy unit testing.
+        """
 
-        if (snapshot.device_count >= self._moderate_threshold
-                or snapshot.head_count >= self._moderate_threshold):
-            return "MODERATE"
+        # HIGH — dual modal: device + head pose co-occurring
+        if snapshot.both_ratio >= self._high_ratio:
+            trigger = (
+                f"Dual-modal: device + suspicious head pose "
+                f"co-occurred {snapshot.both_ratio:.0%} of window"
+            )
+            return "HIGH", trigger
 
-        return "LOW"
+        # HIGH — head pose only: sustained gaze deviation alone
+        if snapshot.head_ratio >= self._head_only_high:
+            trigger = (
+                f"Sustained head pose: suspicious orientation active "
+                f"{snapshot.head_ratio:.0%} of window "
+                f"(threshold {self._head_only_high:.0%})"
+            )
+            return "HIGH", trigger
+
+        # MODERATE — device signal alone
+        if snapshot.device_ratio >= self._moderate_ratio:
+            trigger = (
+                f"Device detected {snapshot.device_ratio:.0%} of window"
+            )
+            return "MODERATE", trigger
+
+        # MODERATE — head pose signal alone
+        if snapshot.head_ratio >= self._moderate_ratio:
+            trigger = (
+                f"Suspicious head pose {snapshot.head_ratio:.0%} of window"
+            )
+            return "MODERATE", trigger
+
+        return "LOW", "No sustained suspicious signals"
