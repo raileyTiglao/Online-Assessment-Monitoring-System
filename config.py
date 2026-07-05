@@ -57,12 +57,29 @@ class CalibrationConfig:
 
     Before monitoring begins, the examinee is asked to sit naturally and
     look at the screen for a short period. Their average yaw/pitch/roll
-    during this window becomes the baseline that all later readings are
-    compared against, rather than absolute camera-relative angles.
+    (and face scale) during this window becomes the baseline that all
+    later readings are compared against, rather than absolute
+    camera-relative angles.
     """
 
     DURATION_SECONDS = 7.0   # How long calibration runs before monitoring starts
     MIN_SAMPLES = 10          # Minimum face samples needed to trust the baseline
+
+    # --- Distance / scale drift detection ---
+    # Monocular head pose estimation (solvePnP with an approximated camera
+    # matrix and a generic 3D face model) carries systematic error that
+    # changes with distance-to-camera. If the examinee moves significantly
+    # closer/farther after calibration, normalized angles become unreliable
+    # and can produce false positives. We detect this via the change in
+    # inter-eye pixel distance (a proxy for distance) relative to baseline.
+    SCALE_DRIFT_TOLERANCE = 0.20   # ±20% change in face scale triggers a warning
+
+
+class HotkeyConfig:
+    """Keyboard controls available during a monitoring session."""
+
+    QUIT_KEYS = [ord('q'), 27]     # 'q' or ESC ends the session
+    RECALIBRATE_KEY = ord('r')     # 'r' redoes the calibration phase mid-session
 
 
 class HeadPoseConfig:

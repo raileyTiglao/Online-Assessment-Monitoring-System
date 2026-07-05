@@ -84,6 +84,10 @@ class OverlayRenderer:
                     (w // 2 - 130, h // 2 + 110),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, (200, 200, 200), 1)
 
+        cv2.putText(frame, "Press Q or ESC to cancel",
+                    (w // 2 - 110, h // 2 + 140),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (150, 150, 150), 1)
+
         return frame
 
     # ------------------------------------------------------------------
@@ -155,9 +159,11 @@ class OverlayRenderer:
 
     def _draw_normalized_pose(self, frame, pose: NormalizedPose):
         """
-        Baseline-relative head pose angle readout and suspicious-behavior
-        reason. Labeled "Δ" (delta) to make clear these are deviations
-        from the examinee's calibrated resting pose, not raw camera angles.
+        Baseline-relative head pose angle readout and status message.
+        Shows a distinct ORANGE drift warning when the examinee has moved
+        significantly closer/farther from the camera since calibration
+        (normalized angles are unreliable in this state), versus a RED
+        suspicious-behavior reason when the baseline is still valid.
         """
         if not pose.success:
             cv2.putText(frame, "No face detected", (10, 115),
@@ -172,8 +178,16 @@ class OverlayRenderer:
         cv2.putText(frame, f"Roll Delta:  {pose.roll:+.1f} deg", (10, 165),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-        if pose.suspicious:
-            cv2.putText(frame, f"! {pose.reason}", (10, 195),
+        # Scale readout — helps the examinee/proctor see distance drift forming
+        scale_color = (0, 165, 255) if pose.drifted else (150, 150, 150)
+        cv2.putText(frame, f"Distance: {pose.scale_ratio:.0%} of calibrated",
+                    (10, 190), cv2.FONT_HERSHEY_SIMPLEX, 0.5, scale_color, 1)
+
+        if pose.drifted:
+            cv2.putText(frame, f"! {pose.reason}", (10, 215),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 165, 255), 2)
+        elif pose.suspicious:
+            cv2.putText(frame, f"! {pose.reason}", (10, 215),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 255), 2)
 
     def _draw_temporal_panel(self, frame, snapshot: TemporalSnapshot,
@@ -194,7 +208,7 @@ class OverlayRenderer:
         cv2.putText(frame, ratio_text, (10, panel_y + 48),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.52, (200, 200, 200), 1)
 
-        cv2.putText(frame, "Press Q to end session",
+        cv2.putText(frame, "Press Q/ESC to end · R to recalibrate",
                     (10, panel_y + 72),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.48, (150, 150, 150), 1)
 

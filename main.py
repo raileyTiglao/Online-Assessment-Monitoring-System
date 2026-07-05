@@ -5,41 +5,39 @@ Online Assessment Monitoring System
 Holy Angel University — School of Computing
 
 Orchestrates all components into a single real-time monitoring session:
-    Calibrator            → Pre-session baseline head pose sampling
-    ObjectDetector         → Faster R-CNN mobile device detection
-    HeadPoseEstimator      → MediaPipe raw head pose estimation
-    HeadPoseNormalizer     → Baseline-relative pose + suspicion analysis
-    TemporalAnalyzer       → Time-based sliding window aggregation
-    RiskClassifier         → Low / Moderate / High classification
-    EvidenceCapture        → Auto screenshot on High Risk
-    SessionReport          → Final JSON report
-    OverlayRenderer        → Live visual feedback
+    Calibrator            → Pre-session baseline head pose + scale sampling
+    ObjectDetector          → Faster R-CNN mobile device detection
+    HeadPoseEstimator        → MediaPipe raw head pose + scale estimation
+    HeadPoseNormalizer         → Baseline-relative pose + drift + suspicion
+    TemporalAnalyzer             → Time-based sliding window aggregation
+    RiskClassifier                → Low / Moderate / High classification
+    EvidenceCapture                 → Auto screenshot on High Risk
+    SessionReport                    → Final JSON report
+    OverlayRenderer                    → Live visual feedback
 
 SESSION FLOW:
     1. Open webcam
     2. CALIBRATION PHASE (~7 seconds) — examinee sits naturally, system
-       samples raw yaw/pitch/roll and averages them into a baseline.
+       samples raw yaw/pitch/roll/scale and averages them into a baseline.
        Monitoring does NOT begin until this completes.
     3. MONITORING PHASE — all head pose behavioral decisions are made
-       against the baseline (normalized angles), not absolute camera angles.
-
-PERFORMANCE NOTE:
-    Faster R-CNN is a heavy two-stage detector and is the main FPS
-    bottleneck. Object detection runs every DetectionConfig.DETECTION_FRAME_SKIP
-    frames, reusing the last known detection result on skipped frames.
-    Head pose estimation (MediaPipe) is cheap and runs on every frame.
+       against the baseline. If the examinee moves significantly closer
+       or farther from the camera, the system detects the resulting
+       distance drift, suppresses suspicion (to avoid false positives),
+       and prompts recalibration.
+    4. Press 'R' at any time during monitoring to redo calibration
+       (e.g. after intentionally repositioning). Press 'Q' or ESC to end
+       the session and save the report.
 
 HOW TO RUN:
     py -3.11 main.py
-
-Press 'Q' in the video window to end the session and save the report.
 =============================================================================
 """
 
 import cv2
 import time
 
-from config import CameraConfig, OutputConfig, DetectionConfig, CalibrationConfig
+from config import CameraConfig, OutputConfig, DetectionConfig, CalibrationConfig, HotkeyConfig
 from detection import ObjectDetector, HeadPoseEstimator
 from analysis import (
     Calibrator, HeadPoseNormalizer,
@@ -52,7 +50,7 @@ from display import OverlayRenderer
 class MonitoringSession:
     """
     Coordinates all subsystems to run a full real-time monitoring session,
-    including the pre-session calibration phase.
+    including the pre-session calibration phase and on-demand recalibration.
 
     Usage:
         session = MonitoringSession()
@@ -69,17 +67,17 @@ class MonitoringSession:
         self.detector        = ObjectDetector()
         self.pose_estimator  = HeadPoseEstimator()
         self.calibrator      = Calibrator()
-        self.normalizer       = None   # Created after calibration completes
-        self.temporal         = TemporalAnalyzer()
-        self.classifier        = RiskClassifier()
-        self.evidence            = EvidenceCapture()
-        self.report               = SessionReport()
-        self.renderer               = OverlayRenderer()
+        self.normalizer      = None   # Created/replaced after each calibration
+        self.temporal        = TemporalAnalyzer()
+        self.classifier      = RiskClassifier()
+        self.evidence        = EvidenceCapture()
+        self.report          = SessionReport()
+        self.renderer        = OverlayRenderer()
 
         # --- Webcam ---
         self.capture = None
 
-        # --- Frame timing for FPS display (monitoring phase only) ---
+        # --- Frame timing for FPS display (resets on each recalibration) ---
         self._frame_count = 0
         self._timer_start = None
 
@@ -98,26 +96,34 @@ class MonitoringSession:
     # ------------------------------------------------------------------
 
     def run(self) -> None:
-        """Run calibration, then the full monitoring session until quit."""
+        """
+        Run calibration, then monitoring, looping back to calibration
+        whenever the user requests recalibration, until the user quits.
+        """
         if not self._open_camera():
             return
 
         try:
-            calibration_ok = self._run_calibration_phase()
-            if not calibration_ok:
-                print("[MonitoringSession] Calibration did not complete "
-                      "(webcam closed or interrupted). Ending session.")
-                return
+            while True:
+                calibration_ok = self._run_calibration_phase()
+                if not calibration_ok:
+                    print("[MonitoringSession] Calibration did not complete "
+                          "(cancelled or webcam issue). Ending session.")
+                    return
 
-            print("[MonitoringSession] Calibration complete. "
-                  "Starting monitoring...")
-            print(f"[MonitoringSession] Detection runs every "
-                  f"{DetectionConfig.DETECTION_FRAME_SKIP} frame(s) "
-                  f"(head pose runs every frame).")
-            print("[MonitoringSession] Press 'Q' to end the session.\n")
+                print(f"[MonitoringSession] Detection runs every "
+                      f"{DetectionConfig.DETECTION_FRAME_SKIP} frame(s) "
+                      f"(head pose runs every frame).")
+                print("[MonitoringSession] Press 'R' to recalibrate, "
+                      "'Q' or ESC to end the session.\n")
 
-            self._timer_start = time.time()
-            self._main_loop()
+                self._reset_for_new_monitoring_phase()
+                action = self._main_loop()
+
+                if action == "quit":
+                    break
+                # action == "recalibrate": loop back to calibration phase
+                print("\n[MonitoringSession] Recalibrating...\n")
         finally:
             self._cleanup()
             self.report.save(OutputConfig.SESSION_REPORT_FILE)
@@ -146,13 +152,14 @@ class MonitoringSession:
 
     def _run_calibration_phase(self) -> bool:
         """
-        Show the calibration screen and collect raw head pose samples
-        until the calibration duration elapses. Builds the baseline and
-        creates the HeadPoseNormalizer that the monitoring phase will use.
+        Show the calibration screen and collect raw head pose + scale
+        samples until the calibration duration elapses. Builds the
+        baseline and (re)creates the HeadPoseNormalizer the monitoring
+        phase will use.
 
         Returns:
             True if calibration completed normally, False if the user
-            closed the window early (e.g. pressed Q or closed the webcam).
+            cancelled (Q/ESC) or the webcam failed.
         """
         print(f"[MonitoringSession] Starting calibration "
               f"({CalibrationConfig.DURATION_SECONDS:.0f}s)...")
@@ -168,13 +175,15 @@ class MonitoringSession:
             head_result = self.pose_estimator.estimate(frame)
             if head_result.success:
                 self.calibrator.add_sample(
-                    head_result.yaw, head_result.pitch, head_result.roll
+                    head_result.yaw, head_result.pitch, head_result.roll,
+                    head_result.scale,
                 )
 
             display_frame = self.renderer.draw_calibration(frame, self.calibrator)
             cv2.imshow("Online Assessment Monitor — HAU", display_frame)
 
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+            key = cv2.waitKey(1) & 0xFF
+            if key in HotkeyConfig.QUIT_KEYS:
                 print("[MonitoringSession] Calibration cancelled by user.")
                 return False
 
@@ -188,29 +197,52 @@ class MonitoringSession:
 
         print(f"[MonitoringSession] Baseline captured: "
               f"yaw={baseline.yaw:.1f}° pitch={baseline.pitch:.1f}° "
-              f"roll={baseline.roll:.1f}° "
+              f"roll={baseline.roll:.1f}° scale={baseline.scale:.1f}px "
               f"({baseline.sample_count} samples)")
 
         return True
+
+    def _reset_for_new_monitoring_phase(self) -> None:
+        """
+        Clear state that shouldn't carry over between calibrations, so a
+        recalibration mid-session starts monitoring fresh rather than
+        inheriting stale risk/temporal state from before the reposition.
+        """
+        self.temporal.reset()
+        self.classifier.reset()
+        self._last_logged_level = "LOW"
+        self._frame_count = 0
+        self._timer_start = time.time()
 
     # ------------------------------------------------------------------
     # Internal: monitoring main loop
     # ------------------------------------------------------------------
 
-    def _main_loop(self) -> None:
-        """Read frames and run the full detection → analysis → display pipeline."""
+    def _main_loop(self) -> str:
+        """
+        Read frames and run the full detection → analysis → display
+        pipeline until the user quits or requests recalibration.
+
+        Returns:
+            "quit" if the session should end, "recalibrate" if the user
+            pressed the recalibration hotkey.
+        """
         while True:
             ret, frame = self.capture.read()
             if not ret:
                 print("[WARNING] Failed to read frame from webcam.")
-                break
+                return "quit"
 
             self._frame_count += 1
             self._process_frame(frame)
 
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+            key = cv2.waitKey(1) & 0xFF
+            if key in HotkeyConfig.QUIT_KEYS:
                 print("\n[MonitoringSession] Session ended by user.")
-                break
+                return "quit"
+            if key == HotkeyConfig.RECALIBRATE_KEY:
+                print("\n[MonitoringSession] Recalibration requested by user.")
+                return "recalibrate"
 
     def _process_frame(self, frame) -> None:
         """Run one full pipeline pass on a single frame and display it."""
@@ -218,10 +250,11 @@ class MonitoringSession:
         # 1. Object detection (Faster R-CNN) — only every Nth frame
         device_detected, boxes, scores, labels = self._run_detection_with_skip(frame)
 
-        # 2. Raw head pose estimation (MediaPipe) — every frame, it's cheap
+        # 2. Raw head pose + scale estimation (MediaPipe) — every frame
         head_result = self.pose_estimator.estimate(frame)
 
-        # 3. Normalize against calibration baseline + evaluate suspicion
+        # 3. Normalize against calibration baseline; detects distance
+        #    drift and suppresses suspicion if the baseline is no longer valid
         normalized_pose = self.normalizer.normalize(head_result)
 
         # 4. Temporal analysis (time-based sliding window aggregation)
@@ -300,7 +333,7 @@ class MonitoringSession:
     # ------------------------------------------------------------------
 
     def _calculate_fps(self) -> float:
-        """Compute running average FPS since monitoring phase started."""
+        """Compute running average FPS since the current monitoring phase started."""
         if self._timer_start is None:
             return 0.0
         elapsed = time.time() - self._timer_start

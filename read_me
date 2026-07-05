@@ -16,3 +16,5 @@ project/
 └── display/
     ├── __init__.py
     └── overlay.py           ← All OpenCV drawing/overlay logic
+
+Please install python version 11 and update gpu cuda to version 12
