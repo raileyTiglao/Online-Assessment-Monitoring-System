@@ -142,6 +142,8 @@ class MonitoringSession:
         finally:
             self._cleanup()
             self.report.save(OutputConfig.SESSION_REPORT_FILE)
+            print(f"[MonitoringSession] Evidence screenshots captured: "
+                  f"{self.evidence.capture_count}")
             print("\n[MonitoringSession] Session complete.")
 
     # ------------------------------------------------------------------

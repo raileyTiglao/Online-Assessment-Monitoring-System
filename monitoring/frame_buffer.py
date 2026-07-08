@@ -72,12 +72,6 @@ class FrameBuffer:
         closest_entry = min(self._entries, key=lambda entry: abs(entry[0] - target_timestamp))
         return closest_entry[1]
 
-    def latest(self) -> Optional[np.ndarray]:
-        """Return the most recently added frame, or None if the buffer is empty."""
-        if not self._entries:
-            return None
-        return self._entries[-1][1]
-
     def reset(self) -> None:
         """Clear all buffered frames (e.g. when starting a new session)."""
         self._entries.clear()

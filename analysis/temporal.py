@@ -163,18 +163,6 @@ class TemporalAnalyzer:
                     return timestamp
         return None
 
-    def is_warmed_up(self) -> bool:
-        """
-        True once the window has accumulated close to its full configured
-        duration. Useful to avoid premature risk classification right at
-        session start, before enough history exists.
-        """
-        if len(self._entries) < 2:
-            return False
-        oldest_time = self._entries[0][0]
-        newest_time = self._entries[-1][0]
-        return (newest_time - oldest_time) >= (self.window_seconds * 0.8)
-
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
