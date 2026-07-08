@@ -122,19 +122,27 @@ class TemporalConfig:
     time instead of a fixed frame count.
     """
 
-    WINDOW_SECONDS = 5.0             # Slightly wider window gives more time to accumulate signal
+    # Tightened from 5.0s after testing showed HIGH risk escalation was too
+    # slow — by the time the flag fired, the examinee had already returned
+    # to normal behavior, causing evidence screenshots to miss the moment.
+    WINDOW_SECONDS = 3.5
 
-    MODERATE_TRIGGER_RATIO = 0.25    # 25% of window = ~1.25 seconds of a single signal
+    MODERATE_TRIGGER_RATIO = 0.30    # 30% of window = ~1.05 seconds of a single signal
 
-    HIGH_TRIGGER_RATIO     = 0.45    # 45% of window = ~2.25 seconds of both signals co-occurring
-                                      # Lowered from 0.65 — more achievable with frame-skip detection
+    HIGH_TRIGGER_RATIO     = 0.40    # 40% of window = ~1.4 seconds of both signals
+                                      # co-occurring. Lowered further for responsiveness.
 
     # Head-pose-only HIGH risk threshold.
     # If the student sustains a suspicious head orientation for this fraction
     # of the window WITHOUT any device being detected, that alone escalates
     # to HIGH. Captures behaviors like prolonged downward gaze without a visible device.
-    HEAD_ONLY_HIGH_RATIO   = 0.65    # 65% of window = ~3.25 seconds sustained head pose alone
-                                      # Stricter than dual-modal since it's a single signal
+    HEAD_ONLY_HIGH_RATIO   = 0.55    # 55% of window = ~1.9 seconds sustained head pose alone
+                                      # Still stricter than dual-modal since it's a single signal
+
+    # Buffer margin added on top of WINDOW_SECONDS when sizing the FrameBuffer
+    # (monitoring/frame_buffer.py), so evidence capture can always look back
+    # far enough to find the frame where sustained behavior actually began.
+    EVIDENCE_LOOKBACK_MARGIN_SECONDS = 1.5
 
     # Safety cap on stored entries so memory doesn't grow unbounded if
     # FPS spikes very high — effectively irrelevant in practice.

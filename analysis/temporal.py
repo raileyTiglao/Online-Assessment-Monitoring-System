@@ -130,6 +130,39 @@ class TemporalAnalyzer:
         """Clear the sliding window (e.g. when starting a new session)."""
         self._entries.clear()
 
+    def get_onset_timestamp(self, require_device: bool) -> float | None:
+        """
+        Scan the current window from oldest to newest and return the
+        timestamp of the first frame that satisfies the given condition:
+
+            require_device=True:  first frame where BOTH device detection
+                                   AND head suspicion were active
+                                   (dual-modal onset)
+            require_device=False: first frame where head suspicion alone
+                                   was active (head-only onset)
+
+        This locates the moment sustained suspicious behavior actually
+        BEGAN, rather than the moment the window finished accumulating
+        enough evidence to escalate risk (which is necessarily later, by
+        design of the sliding-window approach). Used by evidence capture
+        to retrieve a representative frame instead of whatever frame is
+        current at the moment of escalation, which may already show the
+        examinee back to normal behavior.
+
+        Returns:
+            The onset timestamp, or None if no matching frame is found
+            in the current window (shouldn't normally happen if the
+            corresponding risk level has already been triggered).
+        """
+        for timestamp, device, head in self._entries:
+            if require_device:
+                if device and head:
+                    return timestamp
+            else:
+                if head:
+                    return timestamp
+        return None
+
     def is_warmed_up(self) -> bool:
         """
         True once the window has accumulated close to its full configured

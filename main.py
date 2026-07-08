@@ -9,25 +9,30 @@ Orchestrates all components into a single real-time monitoring session:
     ObjectDetector          → Faster R-CNN mobile device detection
     HeadPoseEstimator        → MediaPipe raw head pose + scale estimation
     HeadPoseNormalizer         → Baseline-relative pose + drift + suspicion
-    TemporalAnalyzer             → Time-based sliding window aggregation
-    RiskClassifier                → Low / Moderate / High classification
-    EvidenceCapture                 → Auto screenshot on High Risk
-    SessionReport                    → Final JSON report
-    OverlayRenderer                    → Live visual feedback
+    TemporalAnalyzer              → Time-based sliding window aggregation
+    RiskClassifier                  → Low / Moderate / High classification
+    FrameBuffer                       → Rolling frame history for evidence lookup
+    EvidenceCapture                     → Onset-based screenshot on High Risk
+    SessionReport                         → Final JSON report
+    OverlayRenderer                         → Live visual feedback
 
 SESSION FLOW:
     1. Open webcam
     2. CALIBRATION PHASE (~7 seconds) — examinee sits naturally, system
        samples raw yaw/pitch/roll/scale and averages them into a baseline.
-       Monitoring does NOT begin until this completes.
-    3. MONITORING PHASE — all head pose behavioral decisions are made
-       against the baseline. If the examinee moves significantly closer
-       or farther from the camera, the system detects the resulting
-       distance drift, suppresses suspicion (to avoid false positives),
-       and prompts recalibration.
-    4. Press 'R' at any time during monitoring to redo calibration
-       (e.g. after intentionally repositioning). Press 'Q' or ESC to end
-       the session and save the report.
+    3. MONITORING PHASE — behavioral decisions are made against the
+       baseline. Distance drift is detected and suppresses false
+       positives. Press 'R' to recalibrate, 'Q'/ESC to end the session.
+
+EVIDENCE CAPTURE NOTE:
+    Because HIGH risk escalation is intentionally delayed (it requires
+    sustained behavior over the temporal window, not a single frame), the
+    frame at the MOMENT of escalation may already show the examinee back
+    to normal. To fix this, a rolling FrameBuffer keeps recent frames, and
+    when HIGH risk fires, TemporalAnalyzer.get_onset_timestamp() finds
+    when the sustained behavior actually BEGAN — the buffer then supplies
+    the frame from that moment for the evidence screenshot instead of the
+    live current frame.
 
 HOW TO RUN:
     py -3.11 main.py
@@ -37,20 +42,24 @@ HOW TO RUN:
 import cv2
 import time
 
-from config import CameraConfig, OutputConfig, DetectionConfig, CalibrationConfig, HotkeyConfig
+from config import (
+    CameraConfig, OutputConfig, DetectionConfig,
+    CalibrationConfig, HotkeyConfig, TemporalConfig,
+)
 from detection import ObjectDetector, HeadPoseEstimator
 from analysis import (
     Calibrator, HeadPoseNormalizer,
     TemporalAnalyzer, RiskClassifier,
 )
-from monitoring import EvidenceCapture, SessionReport
+from monitoring import EvidenceCapture, SessionReport, FrameBuffer
 from display import OverlayRenderer
 
 
 class MonitoringSession:
     """
     Coordinates all subsystems to run a full real-time monitoring session,
-    including the pre-session calibration phase and on-demand recalibration.
+    including calibration, on-demand recalibration, and onset-based
+    evidence capture.
 
     Usage:
         session = MonitoringSession()
@@ -73,6 +82,13 @@ class MonitoringSession:
         self.evidence        = EvidenceCapture()
         self.report          = SessionReport()
         self.renderer        = OverlayRenderer()
+
+        # Frame buffer sized to the temporal window + a safety margin, so
+        # the onset frame (up to WINDOW_SECONDS in the past) is always
+        # still available when a HIGH risk event needs it.
+        buffer_duration = (TemporalConfig.WINDOW_SECONDS
+                          + TemporalConfig.EVIDENCE_LOOKBACK_MARGIN_SECONDS)
+        self.frame_buffer = FrameBuffer(max_age_seconds=buffer_duration)
 
         # --- Webcam ---
         self.capture = None
@@ -122,7 +138,6 @@ class MonitoringSession:
 
                 if action == "quit":
                     break
-                # action == "recalibrate": loop back to calibration phase
                 print("\n[MonitoringSession] Recalibrating...\n")
         finally:
             self._cleanup()
@@ -153,13 +168,10 @@ class MonitoringSession:
     def _run_calibration_phase(self) -> bool:
         """
         Show the calibration screen and collect raw head pose + scale
-        samples until the calibration duration elapses. Builds the
-        baseline and (re)creates the HeadPoseNormalizer the monitoring
-        phase will use.
+        samples until the calibration duration elapses.
 
         Returns:
-            True if calibration completed normally, False if the user
-            cancelled (Q/ESC) or the webcam failed.
+            True if calibration completed normally, False if cancelled.
         """
         print(f"[MonitoringSession] Starting calibration "
               f"({CalibrationConfig.DURATION_SECONDS:.0f}s)...")
@@ -203,13 +215,10 @@ class MonitoringSession:
         return True
 
     def _reset_for_new_monitoring_phase(self) -> None:
-        """
-        Clear state that shouldn't carry over between calibrations, so a
-        recalibration mid-session starts monitoring fresh rather than
-        inheriting stale risk/temporal state from before the reposition.
-        """
+        """Clear state that shouldn't carry over between calibrations."""
         self.temporal.reset()
         self.classifier.reset()
+        self.frame_buffer.reset()
         self._last_logged_level = "LOW"
         self._frame_count = 0
         self._timer_start = time.time()
@@ -220,12 +229,11 @@ class MonitoringSession:
 
     def _main_loop(self) -> str:
         """
-        Read frames and run the full detection → analysis → display
-        pipeline until the user quits or requests recalibration.
+        Read frames and run the full pipeline until the user quits or
+        requests recalibration.
 
         Returns:
-            "quit" if the session should end, "recalibrate" if the user
-            pressed the recalibration hotkey.
+            "quit" or "recalibrate"
         """
         while True:
             ret, frame = self.capture.read()
@@ -247,14 +255,17 @@ class MonitoringSession:
     def _process_frame(self, frame) -> None:
         """Run one full pipeline pass on a single frame and display it."""
 
+        # Buffer the raw current frame BEFORE any processing, so it's
+        # available later for onset-based evidence lookup.
+        self.frame_buffer.add(frame)
+
         # 1. Object detection (Faster R-CNN) — only every Nth frame
         device_detected, boxes, scores, labels = self._run_detection_with_skip(frame)
 
         # 2. Raw head pose + scale estimation (MediaPipe) — every frame
         head_result = self.pose_estimator.estimate(frame)
 
-        # 3. Normalize against calibration baseline; detects distance
-        #    drift and suppresses suspicion if the baseline is no longer valid
+        # 3. Normalize against calibration baseline; detects distance drift
         normalized_pose = self.normalizer.normalize(head_result)
 
         # 4. Temporal analysis (time-based sliding window aggregation)
@@ -285,11 +296,7 @@ class MonitoringSession:
         cv2.imshow("Online Assessment Monitor — HAU", frame)
 
     def _run_detection_with_skip(self, frame) -> tuple:
-        """
-        Run Faster R-CNN only every DETECTION_FRAME_SKIP frames.
-        On skipped frames, return the cached result from the last actual
-        detection so display and temporal analysis stay consistent.
-        """
+        """Run Faster R-CNN only every DETECTION_FRAME_SKIP frames."""
         skip = max(1, DetectionConfig.DETECTION_FRAME_SKIP)
 
         if self._detection_skip_counter % skip == 0:
@@ -309,11 +316,17 @@ class MonitoringSession:
 
     def _handle_risk_result(self, risk_result, frame, device_detected,
                              normalized_pose) -> None:
-        """Capture evidence and log an event when risk escalates to MODERATE/HIGH."""
+        """
+        Capture evidence and log an event when risk escalates to
+        MODERATE/HIGH. For HIGH risk, retrieves the ONSET frame (when the
+        sustained behavior began) from the frame buffer instead of using
+        the current (possibly already-normal) frame.
+        """
         level = risk_result.level
 
         if level != self._last_logged_level and level in ("MODERATE", "HIGH"):
-            screenshot_path = self.evidence.try_capture(frame, level)
+            evidence_frame = self._select_evidence_frame(frame, level, risk_result)
+            screenshot_path = self.evidence.try_capture(evidence_frame, level)
 
             self.report.log_event(
                 risk_level=level,
@@ -327,6 +340,25 @@ class MonitoringSession:
             )
 
         self._last_logged_level = level
+
+    def _select_evidence_frame(self, current_frame, level, risk_result):
+        """
+        For HIGH risk, look up the frame from when the sustained behavior
+        actually began (onset), rather than the current frame at the
+        moment of escalation. Falls back to the current frame if no
+        onset timestamp or buffered frame is available.
+        """
+        if level != "HIGH":
+            return current_frame
+
+        require_device = (risk_result.trigger_type == "dual_modal")
+        onset_timestamp = self.temporal.get_onset_timestamp(require_device=require_device)
+
+        if onset_timestamp is None:
+            return current_frame
+
+        onset_frame = self.frame_buffer.get_frame_near(onset_timestamp)
+        return onset_frame if onset_frame is not None else current_frame
 
     # ------------------------------------------------------------------
     # Internal: utility
