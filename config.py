@@ -74,6 +74,8 @@ class CalibrationConfig:
     # inter-eye pixel distance (a proxy for distance) relative to baseline.
     SCALE_DRIFT_TOLERANCE = 0.20   # ±20% change in face scale triggers a warning
 
+    POST_CALIBRATION_GRACE_SECONDS = 2.0 # Grace period so the model can process recorded baselines
+
 
 class HotkeyConfig:
     """Keyboard controls available during a monitoring session."""
@@ -91,9 +93,9 @@ class HeadPoseConfig:
     REFINE_LANDMARKS         = True
 
     # Angle thresholds (degrees) beyond which pose is flagged as suspicious
-    YAW_THRESHOLD   = 35    # Horizontal left/right turn
-    PITCH_THRESHOLD = 28    # Downward tilt (negative pitch)
-    ROLL_THRESHOLD  = 25    # Lateral tilt
+    YAW_THRESHOLD   = 32    # Horizontal left/right turn
+    PITCH_THRESHOLD = 24    # Downward tilt (negative pitch)
+    ROLL_THRESHOLD  = 22    # Lateral tilt
 
     # MediaPipe landmark indices used for solvePnP
     # Order: nose tip, chin, left eye corner, right eye corner,
@@ -110,6 +112,7 @@ class HeadPoseConfig:
         [ 150.0, -150.0, -125.0],
     ], dtype=np.float64)
 
+    SMOOTHING_ALPHA = 0.3   # lower = smoother/slower to react
 
 class TemporalConfig:
     """
@@ -127,16 +130,16 @@ class TemporalConfig:
     # to normal behavior, causing evidence screenshots to miss the moment.
     WINDOW_SECONDS = 3.5
 
-    MODERATE_TRIGGER_RATIO = 0.45     # 30% of window = ~1.05 seconds of a single signal
+    MODERATE_TRIGGER_RATIO = 0.35     # 30% of window = ~1.05 seconds of a single signal
 
-    HIGH_TRIGGER_RATIO     = 0.65    # 40% of window = ~1.4 seconds of both signals
+    HIGH_TRIGGER_RATIO     = 0.50    # 40% of window = ~1.4 seconds of both signals
                                       # co-occurring. Lowered further for responsiveness.
 
     # Head-pose-only HIGH risk threshold.
     # If the student sustains a suspicious head orientation for this fraction
     # of the window WITHOUT any device being detected, that alone escalates
     # to HIGH. Captures behaviors like prolonged downward gaze without a visible device.
-    HEAD_ONLY_HIGH_RATIO   = 0.80    # 55% of window = ~1.9 seconds sustained head pose alone
+    HEAD_ONLY_HIGH_RATIO   = 0.65    # 55% of window = ~1.9 seconds sustained head pose alone
                                       # Still stricter than dual-modal since it's a single signal
 
     # Buffer margin added on top of WINDOW_SECONDS when sizing the FrameBuffer
