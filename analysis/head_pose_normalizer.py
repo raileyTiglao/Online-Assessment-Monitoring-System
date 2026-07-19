@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from config import HeadPoseConfig, CalibrationConfig
 from detection.head_pose import HeadPoseResult
 from analysis.calibration import CalibrationBaseline
+import time
 
 
 @dataclass
@@ -78,6 +79,8 @@ class HeadPoseNormalizer:
 
     def __init__(self, baseline: CalibrationBaseline):
         self._baseline = baseline
+        self._smoothed_yaw = self._smoothed_pitch = self._smoothed_roll = None
+        self._ready_at = time.time() + CalibrationConfig.POST_CALIBRATION_GRACE_SECONDS
 
     # ------------------------------------------------------------------
     # Public API
@@ -104,6 +107,8 @@ class HeadPoseNormalizer:
         n_yaw   = head_result.yaw   - self._baseline.yaw
         n_pitch = head_result.pitch - self._baseline.pitch
         n_roll  = head_result.roll  - self._baseline.roll
+        n_yaw, n_pitch, n_roll = self._smooth(n_yaw, n_pitch, n_roll)
+        in_grace_period = time.time() < self._ready_at
 
         if drifted:
             # Distance from camera changed too much since calibration —
@@ -115,6 +120,9 @@ class HeadPoseNormalizer:
             reason = (f"Moved {direction} from camera "
                       f"({scale_ratio:.0%} of calibrated distance) — "
                       f"press R to recalibrate")
+        elif in_grace_period:
+            suspicious = False
+            reason = "Settling after calibration..."
         else:
             suspicious, reason = self._analyse(n_yaw, n_pitch, n_roll)
 
@@ -131,6 +139,18 @@ class HeadPoseNormalizer:
             suspicious=suspicious,
             reason=reason,
         )
+    
+    def _smooth(self, yaw, pitch, roll):
+        """EMA over normalized angles — damps landmark jitter that was
+        causing inconsistent flags between otherwise-similar frontal runs."""
+        a = HeadPoseConfig.SMOOTHING_ALPHA
+        if self._smoothed_yaw is None:
+            self._smoothed_yaw, self._smoothed_pitch, self._smoothed_roll = yaw, pitch, roll
+        else:
+            self._smoothed_yaw   = a * yaw   + (1 - a) * self._smoothed_yaw
+            self._smoothed_pitch = a * pitch + (1 - a) * self._smoothed_pitch
+            self._smoothed_roll  = a * roll  + (1 - a) * self._smoothed_roll
+        return self._smoothed_yaw, self._smoothed_pitch, self._smoothed_roll
 
     # ------------------------------------------------------------------
     # Internal helpers
