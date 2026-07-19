@@ -64,6 +64,7 @@ class CalibrationConfig:
 
     DURATION_SECONDS = 7.0   # How long calibration runs before monitoring starts
     MIN_SAMPLES = 10          # Minimum face samples needed to trust the baseline
+    SETTLE_SECONDS = 1.5     # ignore samples during this initial window — user
 
     # --- Distance / scale drift detection ---
     # Monocular head pose estimation (solvePnP with an approximated camera

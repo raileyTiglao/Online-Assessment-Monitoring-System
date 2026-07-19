@@ -81,9 +81,10 @@ class Calibrator:
 
     def add_sample(self, yaw: float, pitch: float, roll: float,
                    scale: float = 0.0) -> None:
-        """Record one frame's raw head pose + scale reading during calibration."""
         if self._start_time is None:
             self.start()
+        if self.elapsed_seconds() < CalibrationConfig.SETTLE_SECONDS:
+            return
         self._yaw_samples.append(yaw)
         self._pitch_samples.append(pitch)
         self._roll_samples.append(roll)
@@ -136,9 +137,9 @@ class Calibrator:
                                         scale=0.0, sample_count=0)
 
         return CalibrationBaseline(
-            yaw=statistics.mean(self._yaw_samples),
-            pitch=statistics.mean(self._pitch_samples),
-            roll=statistics.mean(self._roll_samples),
-            scale=statistics.mean(self._scale_samples),
+            yaw=statistics.median(self._yaw_samples),
+            pitch=statistics.median(self._pitch_samples),
+            roll=statistics.median(self._roll_samples),
+            scale=statistics.median(self._scale_samples),
             sample_count=len(self._yaw_samples),
         )
