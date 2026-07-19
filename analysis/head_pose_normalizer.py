@@ -132,11 +132,6 @@ class HeadPoseNormalizer:
             reason=reason,
         )
 
-    @property
-    def baseline(self) -> CalibrationBaseline:
-        """The CalibrationBaseline this normalizer is using."""
-        return self._baseline
-
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

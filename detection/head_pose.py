@@ -42,18 +42,12 @@ class HeadPoseResult:
         roll:          Lateral tilt in degrees
         scale:         Pixel distance between the two eye corners — a proxy
                        for distance-to-camera, used for drift detection
-        landmarks_2d:  List of (x, y) pixel coords for all 468 landmarks
     """
-    success:      bool
-    yaw:          float = 0.0
-    pitch:        float = 0.0
-    roll:         float = 0.0
-    scale:        float = 0.0
-    landmarks_2d: list  = None
-
-    def __post_init__(self):
-        if self.landmarks_2d is None:
-            self.landmarks_2d = []
+    success: bool
+    yaw:     float = 0.0
+    pitch:   float = 0.0
+    roll:    float = 0.0
+    scale:   float = 0.0
 
 
 class HeadPoseEstimator:
@@ -123,18 +117,12 @@ class HeadPoseEstimator:
         yaw, pitch, roll = self._solve_pose(image_points, camera_matrix)
         scale = self._compute_scale(image_points)
 
-        landmarks_2d = [
-            (int(lm.x * w), int(lm.y * h))
-            for lm in face_landmarks.landmark
-        ]
-
         return HeadPoseResult(
             success=True,
             yaw=round(yaw, 2),
             pitch=round(pitch, 2),
             roll=round(roll, 2),
             scale=round(scale, 2),
-            landmarks_2d=landmarks_2d,
         )
 
     def close(self):

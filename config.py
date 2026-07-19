@@ -28,7 +28,7 @@ class DetectionConfig:
     # --- Fine-tuned model replacement ---
     # Set CUSTOM_MODEL_PATH to your .pth file once training is done.
     # Leave as None to use COCO pre-trained weights.
-    CUSTOM_MODEL_PATH = None       # e.g. "models/fasterrcnn_custom.pth"
+    CUSTOM_MODEL_PATH = None
     CUSTOM_NUM_CLASSES = 2         # background + 1 device class
 
     # --- Performance optimizations ---
@@ -91,9 +91,9 @@ class HeadPoseConfig:
     REFINE_LANDMARKS         = True
 
     # Angle thresholds (degrees) beyond which pose is flagged as suspicious
-    YAW_THRESHOLD   = 30    # Horizontal left/right turn
-    PITCH_THRESHOLD = 20    # Downward tilt (negative pitch)
-    ROLL_THRESHOLD  = 20    # Lateral tilt
+    YAW_THRESHOLD   = 35    # Horizontal left/right turn
+    PITCH_THRESHOLD = 28    # Downward tilt (negative pitch)
+    ROLL_THRESHOLD  = 25    # Lateral tilt
 
     # MediaPipe landmark indices used for solvePnP
     # Order: nose tip, chin, left eye corner, right eye corner,
@@ -127,16 +127,16 @@ class TemporalConfig:
     # to normal behavior, causing evidence screenshots to miss the moment.
     WINDOW_SECONDS = 3.5
 
-    MODERATE_TRIGGER_RATIO = 0.30    # 30% of window = ~1.05 seconds of a single signal
+    MODERATE_TRIGGER_RATIO = 0.45     # 30% of window = ~1.05 seconds of a single signal
 
-    HIGH_TRIGGER_RATIO     = 0.40    # 40% of window = ~1.4 seconds of both signals
+    HIGH_TRIGGER_RATIO     = 0.65    # 40% of window = ~1.4 seconds of both signals
                                       # co-occurring. Lowered further for responsiveness.
 
     # Head-pose-only HIGH risk threshold.
     # If the student sustains a suspicious head orientation for this fraction
     # of the window WITHOUT any device being detected, that alone escalates
     # to HIGH. Captures behaviors like prolonged downward gaze without a visible device.
-    HEAD_ONLY_HIGH_RATIO   = 0.55    # 55% of window = ~1.9 seconds sustained head pose alone
+    HEAD_ONLY_HIGH_RATIO   = 0.80    # 55% of window = ~1.9 seconds sustained head pose alone
                                       # Still stricter than dual-modal since it's a single signal
 
     # Buffer margin added on top of WINDOW_SECONDS when sizing the FrameBuffer

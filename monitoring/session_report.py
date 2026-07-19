@@ -106,10 +106,6 @@ class SessionReport:
 
         return report
 
-    @property
-    def event_count(self) -> int:
-        return len(self._events)
-
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

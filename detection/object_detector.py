@@ -85,36 +85,7 @@ class ObjectDetector:
         print("[ObjectDetector] COCO model loaded.")
         return model
 
-    def _load_custom_model(self, model_path: str):
-        """
-        Load your fine-tuned Faster R-CNN weights.
-
-        Call this after training on your custom webcam dataset.
-        The model expects DetectionConfig.CUSTOM_NUM_CLASSES output classes.
-
-        Args:
-            model_path: Path to the saved .pth checkpoint file.
-        """
-        print(f"[ObjectDetector] Loading custom model from: {model_path}")
-        num_classes = DetectionConfig.CUSTOM_NUM_CLASSES
-
-        # Build model with custom number of classes (no pretrained weights)
-        model = fasterrcnn_resnet50_fpn(weights=None, num_classes=num_classes)
-
-        # Load saved checkpoint
-        checkpoint = torch.load(model_path, map_location=self.device)
-
-        # Support both raw state_dict and wrapped checkpoint formats
-        if "model_state_dict" in checkpoint:
-            model.load_state_dict(checkpoint["model_state_dict"])
-        else:
-            model.load_state_dict(checkpoint)
-
-        model.to(self.device)
-        model.eval()
-        print(f"[ObjectDetector] Custom model loaded ({num_classes} classes).")
-        return model
-
+    
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
