@@ -62,7 +62,6 @@ class Calibrator:
     def __init__(self, duration_seconds: float = None):
         self.duration = duration_seconds or CalibrationConfig.DURATION_SECONDS
         self._start_time = None
-        self._armed = False
         self._yaw_samples = []
         self._pitch_samples = []
         self._roll_samples = []
@@ -74,7 +73,6 @@ class Calibrator:
 
     def start(self) -> None:
         """Begin (or restart) the calibration timer and clear samples."""
-        self._armed = False
         self._start_time = time.time()
         self._yaw_samples.clear()
         self._pitch_samples.clear()
@@ -84,7 +82,7 @@ class Calibrator:
     def add_sample(self, yaw: float, pitch: float, roll: float,
                    scale: float = 0.0) -> None:
         if self._start_time is None:
-            return   # still waiting for user to press start — don't auto-start
+            self.start()
         if self.elapsed_seconds() < CalibrationConfig.SETTLE_SECONDS:
             return
         self._yaw_samples.append(yaw)
@@ -145,13 +143,3 @@ class Calibrator:
             scale=statistics.median(self._scale_samples),
             sample_count=len(self._yaw_samples),
         )
-    
-    def arm(self) -> None:
-        """Enter the 'waiting for user to press start' state. Call this
-        when the calibration screen first appears, before start()."""
-        self._armed = True
-        self._start_time = None
-
-    def is_waiting_to_start(self) -> bool:
-        """True while showing the 'press SPACE when ready' screen."""
-        return self._armed and self._start_time is None
