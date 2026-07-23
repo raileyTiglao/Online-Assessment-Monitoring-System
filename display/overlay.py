@@ -216,22 +216,3 @@ class OverlayRenderer:
         """Frames-per-second counter, top right."""
         cv2.putText(frame, f"FPS: {fps:.1f}", (w - 150, 80),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
-    
-    def draw_ready_screen(self, frame: np.ndarray) -> np.ndarray:
-        """Shown before calibration sampling begins, letting the user get
-        comfortable and press SPACE when they're ready to start."""
-        h, w = frame.shape[:2]
-
-        overlay = frame.copy()
-        cv2.rectangle(overlay, (0, 0), (w, h), (0, 0, 0), -1)
-        frame = cv2.addWeighted(overlay, 0.35, frame, 0.65, 0)
-
-        cv2.putText(frame, "GET COMFORTABLE", (w // 2 - 190, h // 2 - 60),
-                    cv2.FONT_HERSHEY_DUPLEX, 1.3, (0, 200, 255), 3)
-        cv2.putText(frame, "Sit naturally, then press SPACE to begin",
-                    (w // 2 - 280, h // 2), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                    (255, 255, 255), 2)
-        cv2.putText(frame, "Press Q or ESC to cancel", (w // 2 - 110, h // 2 + 40),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (150, 150, 150), 1)
-
-        return frame
