@@ -62,6 +62,7 @@ class Calibrator:
     def __init__(self, duration_seconds: float = None):
         self.duration = duration_seconds or CalibrationConfig.DURATION_SECONDS
         self._start_time = None
+        self._armed = False
         self._yaw_samples = []
         self._pitch_samples = []
         self._roll_samples = []
@@ -73,6 +74,7 @@ class Calibrator:
 
     def start(self) -> None:
         """Begin (or restart) the calibration timer and clear samples."""
+        self._armed = False
         self._start_time = time.time()
         self._yaw_samples.clear()
         self._pitch_samples.clear()
@@ -81,9 +83,10 @@ class Calibrator:
 
     def add_sample(self, yaw: float, pitch: float, roll: float,
                    scale: float = 0.0) -> None:
-        """Record one frame's raw head pose + scale reading during calibration."""
         if self._start_time is None:
-            self.start()
+            return   # still waiting for user to press start — don't auto-start
+        if self.elapsed_seconds() < CalibrationConfig.SETTLE_SECONDS:
+            return
         self._yaw_samples.append(yaw)
         self._pitch_samples.append(pitch)
         self._roll_samples.append(roll)
@@ -136,9 +139,19 @@ class Calibrator:
                                         scale=0.0, sample_count=0)
 
         return CalibrationBaseline(
-            yaw=statistics.mean(self._yaw_samples),
-            pitch=statistics.mean(self._pitch_samples),
-            roll=statistics.mean(self._roll_samples),
-            scale=statistics.mean(self._scale_samples),
+            yaw=statistics.median(self._yaw_samples),
+            pitch=statistics.median(self._pitch_samples),
+            roll=statistics.median(self._roll_samples),
+            scale=statistics.median(self._scale_samples),
             sample_count=len(self._yaw_samples),
         )
+    
+    def arm(self) -> None:
+        """Enter the 'waiting for user to press start' state. Call this
+        when the calibration screen first appears, before start()."""
+        self._armed = True
+        self._start_time = None
+
+    def is_waiting_to_start(self) -> bool:
+        """True while showing the 'press SPACE when ready' screen."""
+        return self._armed and self._start_time is None
