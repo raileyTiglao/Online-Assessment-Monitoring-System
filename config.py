@@ -95,7 +95,7 @@ class HeadPoseConfig:
 
     # Angle thresholds (degrees) beyond which pose is flagged as suspicious
     YAW_THRESHOLD   = 32    # Horizontal left/right turn
-    PITCH_THRESHOLD = 24    # Downward tilt (negative pitch)
+    PITCH_THRESHOLD = 10    # Downward tilt (negative pitch)
     ROLL_THRESHOLD  = 22    # Lateral tilt
 
     # MediaPipe landmark indices used for solvePnP

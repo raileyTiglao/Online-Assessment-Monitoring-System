@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from config import HeadPoseConfig, CalibrationConfig
 from detection.head_pose import HeadPoseResult
 from analysis.calibration import CalibrationBaseline
+from analysis.one_euro_filter import OneEuroFilter
 import time
 
 
@@ -79,7 +80,15 @@ class HeadPoseNormalizer:
 
     def __init__(self, baseline: CalibrationBaseline):
         self._baseline = baseline
-        self._smoothed_yaw = self._smoothed_pitch = self._smoothed_roll = None
+        self._yaw_filter   = OneEuroFilter(HeadPoseConfig.FILTER_MIN_CUTOFF,
+                                           HeadPoseConfig.FILTER_BETA,
+                                           HeadPoseConfig.FILTER_D_CUTOFF)
+        self._pitch_filter = OneEuroFilter(HeadPoseConfig.FILTER_MIN_CUTOFF,
+                                           HeadPoseConfig.FILTER_BETA,
+                                           HeadPoseConfig.FILTER_D_CUTOFF)
+        self._roll_filter  = OneEuroFilter(HeadPoseConfig.FILTER_MIN_CUTOFF,
+                                           HeadPoseConfig.FILTER_BETA,
+                                           HeadPoseConfig.FILTER_D_CUTOFF)
         self._ready_at = time.time() + CalibrationConfig.POST_CALIBRATION_GRACE_SECONDS
 
     # ------------------------------------------------------------------
@@ -139,18 +148,15 @@ class HeadPoseNormalizer:
             suspicious=suspicious,
             reason=reason,
         )
+        
     
     def _smooth(self, yaw, pitch, roll):
-        """EMA over normalized angles — damps landmark jitter that was
-        causing inconsistent flags between otherwise-similar frontal runs."""
-        a = HeadPoseConfig.SMOOTHING_ALPHA
-        if self._smoothed_yaw is None:
-            self._smoothed_yaw, self._smoothed_pitch, self._smoothed_roll = yaw, pitch, roll
-        else:
-            self._smoothed_yaw   = a * yaw   + (1 - a) * self._smoothed_yaw
-            self._smoothed_pitch = a * pitch + (1 - a) * self._smoothed_pitch
-            self._smoothed_roll  = a * roll  + (1 - a) * self._smoothed_roll
-        return self._smoothed_yaw, self._smoothed_pitch, self._smoothed_roll
+        """One-Euro filter over normalized angles — damps landmark jitter
+        when still while staying responsive to fast, real head turns."""
+        return (self._yaw_filter(yaw),
+                self._pitch_filter(pitch),
+                self._roll_filter(roll))
+    
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -180,7 +186,7 @@ class HeadPoseNormalizer:
             direction = "left" if yaw < 0 else "right"
             reasons.append(f"Head turned {direction} ({yaw:+.1f}° from baseline)")
 
-        if pitch < -HeadPoseConfig.PITCH_THRESHOLD:
+        if pitch > HeadPoseConfig.PITCH_THRESHOLD:
             reasons.append(f"Looking down ({pitch:+.1f}° from baseline)")
 
         if abs(roll) > HeadPoseConfig.ROLL_THRESHOLD:
