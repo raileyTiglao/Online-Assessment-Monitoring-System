@@ -64,6 +64,7 @@ class CalibrationConfig:
 
     DURATION_SECONDS = 7.0   # How long calibration runs before monitoring starts
     MIN_SAMPLES = 10          # Minimum face samples needed to trust the baseline
+    SETTLE_SECONDS = 1.5     # ignore samples during this initial window — user
 
     # --- Distance / scale drift detection ---
     # Monocular head pose estimation (solvePnP with an approximated camera
@@ -100,19 +101,32 @@ class HeadPoseConfig:
     # MediaPipe landmark indices used for solvePnP
     # Order: nose tip, chin, left eye corner, right eye corner,
     #        left mouth corner, right mouth corner
-    LANDMARK_INDICES = [1, 152, 33, 263, 61, 291]
+    LANDMARK_INDICES = [1, 152, 33, 263, 133, 362, 61, 291,
+                        168, 234, 454, 10, 172, 397]
 
     # Corresponding 3D model points (standard face, in mm)
     FACE_3D_MODEL = np.array([
-        [  0.0,    0.0,    0.0],
-        [  0.0, -330.0,  -65.0],
-        [-225.0,  170.0, -135.0],
-        [ 225.0,  170.0, -135.0],
-        [-150.0, -150.0, -125.0],
-        [ 150.0, -150.0, -125.0],
+        [   0.0,    0.0,    0.0],   # 1   nose tip
+        [   0.0, -330.0,  -65.0],   # 152 chin
+        [-225.0,  170.0, -135.0],   # 33  left eye outer
+        [ 225.0,  170.0, -135.0],   # 263 right eye outer
+        [ -75.0,  170.0, -125.0],   # 133 left eye inner
+        [  75.0,  170.0, -125.0],   # 362 right eye inner
+        [-150.0, -150.0, -125.0],   # 61  left mouth corner
+        [ 150.0, -150.0, -125.0],   # 291 right mouth corner
+        [   0.0,  115.0,  -50.0],   # 168 nose bridge
+        [-255.0,   35.0, -230.0],   # 234 left cheek
+        [ 255.0,   35.0, -230.0],   # 454 right cheek
+        [   0.0,  260.0, -100.0],   # 10  forehead center
+        [-190.0, -230.0, -190.0],   # 172 left jaw
+        [ 190.0, -230.0, -190.0],   # 397 right jaw
     ], dtype=np.float64)
 
-    SMOOTHING_ALPHA = 0.3   # lower = smoother/slower to react
+    # One-Euro filter params (replaces the flat EMA). Smoothing adapts to
+    # speed: heavy when still (kills jitter), light when actually moving.
+    FILTER_MIN_CUTOFF = 1.0     # lower = more smoothing when still
+    FILTER_BETA       = 0.007   # higher = more responsive to fast movement
+    FILTER_D_CUTOFF   = 1.0
 
 class TemporalConfig:
     """

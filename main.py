@@ -169,18 +169,27 @@ class MonitoringSession:
     # ------------------------------------------------------------------
 
     def _run_calibration_phase(self) -> bool:
-        """
-        Show the calibration screen and collect raw head pose + scale
-        samples until the calibration duration elapses.
+        
+        print(f"[MonitoringSession] Please get comfortable, then press SPACE "
+              f"to begin calibration ({CalibrationConfig.DURATION_SECONDS:.0f}s)...")
 
-        Returns:
-            True if calibration completed normally, False if cancelled.
-        """
-        print(f"[MonitoringSession] Starting calibration "
-              f"({CalibrationConfig.DURATION_SECONDS:.0f}s)...")
-        print("[MonitoringSession] Please sit naturally and look at the screen.\n")
+        self.calibrator.arm()
 
-        self.calibrator.start()
+        # Wait for the user to signal they're ready
+        while self.calibrator.is_waiting_to_start:
+            ret, frame = self.capture.read()
+            if not ret:
+                return False
+
+            display_frame = self.renderer.draw_ready_screen(frame)
+            cv2.imshow("Online Assessment Monitor — HAU", display_frame)
+
+            key = cv2.waitKey(1) & 0xFF
+            if key in HotkeyConfig.QUIT_KEYS:
+                print("[MonitoringSession] Calibration cancelled by user.")
+                return False
+            if key == HotkeyConfig.START_CALIBRATION_KEY:
+                self.calibrator.start()
 
         while not self.calibrator.is_complete():
             ret, frame = self.capture.read()
