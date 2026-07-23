@@ -173,7 +173,7 @@ class HeadPoseEstimator:
             image_points,
             camera_matrix,
             dist_coeffs,
-            flags=cv2.SOLVEPNP_ITERATIVE,
+            flags=cv2.SOLVEPNP_SQPNP,   # more stable than ITERATIVE with many points
         )
 
         if not success:
