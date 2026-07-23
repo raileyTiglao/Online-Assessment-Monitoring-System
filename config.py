@@ -23,7 +23,7 @@ class DetectionConfig:
     # Tablets are partially detected under the phone class in COCO.
     # Your fine-tuned model will handle phone/tablet distinction more precisely.
     TARGET_CLASS_IDS = [77]
-    TARGET_CLASS_NAMES = {77: "Cell Phone"}
+    TARGET_CLASS_NAMES = {77: " Mobile Devices"}
 
     # --- Fine-tuned model replacement ---
     # Set CUSTOM_MODEL_PATH to your .pth file once training is done.
