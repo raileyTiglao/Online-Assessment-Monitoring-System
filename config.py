@@ -201,3 +201,15 @@ class SystemConfig:
     """General runtime settings."""
 
     USE_GPU = True    # False = force CPU (DetectionConfig.USE_AMP is ignored on CPU)
+
+class DatabaseConfig:
+    """Firebase (Firestore) persistence settings."""
+
+    # Service account key downloaded from Firebase Console -> Project
+    # Settings -> Service Accounts -> Generate new private key. Never
+    # commit this file — see .gitignore.
+    FIREBASE_CREDENTIALS_PATH = "connection/firebase_credentials.json"
+    FIRESTORE_COLLECTION      = "sessions"
+
+    ENABLE_DB      = True    # False = JSON-only, unchanged legacy behavior
+    KEEP_JSON      = True    # Keep writing session_report.json as a backup

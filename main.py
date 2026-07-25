@@ -46,6 +46,7 @@ import time
 from config import (
     CameraConfig, OutputConfig, DetectionConfig,
     CalibrationConfig, HotkeyConfig, TemporalConfig,
+    DatabaseConfig,
 )
 from detection import ObjectDetector, HeadPoseEstimator
 from analysis import (
@@ -54,6 +55,7 @@ from analysis import (
 )
 from monitoring import EvidenceCapture, SessionReport, FrameBuffer
 from display import OverlayRenderer
+from connection import FirebaseClient, FirestoreSessionRepository
 
 
 class MonitoringSession:
@@ -145,7 +147,14 @@ class MonitoringSession:
                 print("\n[MonitoringSession] Recalibrating...\n")
         finally:
             self._cleanup()
-            self.report.save(OutputConfig.SESSION_REPORT_FILE)
+
+            if DatabaseConfig.KEEP_JSON:
+                self.report.save(OutputConfig.SESSION_REPORT_FILE)
+
+            if DatabaseConfig.ENABLE_DB:
+                client = FirebaseClient()
+                self.report.save_to_db(FirestoreSessionRepository(client))
+
             print(f"[MonitoringSession] Evidence screenshots captured: "
                   f"{self.evidence.capture_count}")
             print("\n[MonitoringSession] Session complete.")
