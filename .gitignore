@@ -15,6 +15,9 @@ models/
 session_report.json
 evidence_captures/
 
+# Firebase service account key — secret, never commit
+connection/firebase_credentials.json
+
 # OS files
 .DS_Store
 Thumbs.db

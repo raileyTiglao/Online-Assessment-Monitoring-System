@@ -28,6 +28,7 @@ class FlaggedEvent:
     roll:                 float
     device_detected:      bool
     behavioral_indicator: str
+    trigger:              str = ""            
     screenshot_path:      Optional[str] = None
 
 
@@ -72,7 +73,7 @@ class SessionReport:
                   trigger: str = "",
                   screenshot_path: Optional[str] = None) -> None:
         """Append a new flagged event to the session log."""
-        event = FlaggedEvent(
+        self._events.append(FlaggedEvent(
             timestamp=datetime.now().isoformat(),
             risk_level=risk_level,
             yaw=yaw,
@@ -80,12 +81,9 @@ class SessionReport:
             roll=roll,
             device_detected=device_detected,
             behavioral_indicator=behavioral_indicator,
+            trigger=trigger,
             screenshot_path=screenshot_path,
-        )
-        # Attach trigger description as an extra field if provided
-        if trigger:
-            event.__dict__["trigger"] = trigger
-        self._events.append(event)
+        ))
 
     def save(self, filepath: str) -> dict:
         """
@@ -105,6 +103,22 @@ class SessionReport:
         print(f"[SessionReport]   MODERATE risk: {report['moderate_risk_count']}")
 
         return report
+    
+    def save_to_db(self, repository, examinee_label: str = None) -> int | None:
+        """
+        Persist this session to the database. Safe to call alongside save() —
+        a DB failure must never lose the session, so it degrades to a warning.
+        """
+        session_uid = f"sess_{self._session_start.replace(':', '').replace('.', '')}"
+        try:
+            session_id = repository.save_report(
+                self._build_report_dict(), session_uid, examinee_label)
+            print(f"[SessionReport] Persisted to DB as session id={session_id}")
+            return session_id
+        except Exception as exc:
+            print(f"[SessionReport][WARN] DB write failed ({exc}). "
+                  f"JSON report is still intact.")
+            return None
 
     # ------------------------------------------------------------------
     # Internal helpers
