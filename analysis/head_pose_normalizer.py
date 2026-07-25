@@ -108,7 +108,19 @@ class HeadPoseNormalizer:
             and suspicion flag
         """
         if not head_result.success:
-            return NormalizedPose(success=False)
+            # A lost face is itself a signal, not a neutral one — MediaPipe's
+            # face mesh is least stable during exactly the poses we want to
+            # catch (steep downward tilt, turning away, occlusion). Scoring
+            # dropout as "not suspicious" was erasing that behavior from the
+            # temporal window instead of counting toward it. The sliding
+            # window's ratio thresholds already require sustained dropout
+            # before this escalates risk, so brief blinks/glitches are
+            # naturally filtered out.
+            return NormalizedPose(
+                success=False,
+                suspicious=True,
+                reason="No face detected — possible occlusion or off-camera movement",
+            )
 
         scale_ratio = self._compute_scale_ratio(head_result.scale)
         drifted = abs(scale_ratio - 1.0) > CalibrationConfig.SCALE_DRIFT_TOLERANCE
