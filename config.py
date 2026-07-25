@@ -165,6 +165,14 @@ class TemporalConfig:
     # FPS spikes very high — effectively irrelevant in practice.
     MAX_WINDOW_ENTRIES = 600
 
+    # A new risk level must hold steady for this long before it's treated
+    # as a genuine transition (evidence capture + report logging), rather
+    # than reacting to every frame-to-frame change. Filters out boundary
+    # flicker — e.g. brief MODERATE blips from resting jitter right at a
+    # ratio threshold — so the session report reflects real incidents
+    # instead of noise.
+    LEVEL_LOG_HOLD_SECONDS = 0.75
+
 
 class CameraConfig:
     """Webcam settings."""

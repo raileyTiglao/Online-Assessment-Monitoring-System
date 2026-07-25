@@ -98,8 +98,11 @@ class MonitoringSession:
         self._frame_count = 0
         self._timer_start = None
 
-        # --- Track last logged level to avoid duplicate event spam ---
-        self._last_logged_level = "LOW"
+        # --- Track logged level + debounce state to avoid duplicate event
+        # spam from boundary flicker (see _handle_risk_result) ---
+        self._committed_level = "LOW"
+        self._pending_level = "LOW"
+        self._pending_since = 0.0
 
         # --- Detection frame-skip state ---
         self._detection_skip_counter = 0
@@ -222,7 +225,9 @@ class MonitoringSession:
         self.temporal.reset()
         self.classifier.reset()
         self.frame_buffer.reset()
-        self._last_logged_level = "LOW"
+        self._committed_level = "LOW"
+        self._pending_level = "LOW"
+        self._pending_since = time.time()
         self._frame_count = 0
         self._timer_start = time.time()
 
@@ -321,13 +326,25 @@ class MonitoringSession:
                              normalized_pose) -> None:
         """
         Capture evidence and log an event when risk escalates to
-        MODERATE/HIGH. For HIGH risk, retrieves the ONSET frame (when the
+        MODERATE/HIGH — but only once the new level has held steady for
+        TemporalConfig.LEVEL_LOG_HOLD_SECONDS, so a brief boundary flicker
+        (e.g. ratio dipping just above/below a threshold from resting
+        jitter) doesn't spam the report with events for the same
+        incident. For HIGH risk, retrieves the ONSET frame (when the
         sustained behavior began) from the frame buffer instead of using
         the current (possibly already-normal) frame.
         """
         level = risk_result.level
+        now = time.time()
 
-        if level != self._last_logged_level and level in ("MODERATE", "HIGH"):
+        if level != self._pending_level:
+            self._pending_level = level
+            self._pending_since = now
+
+        if now - self._pending_since < TemporalConfig.LEVEL_LOG_HOLD_SECONDS:
+            return
+
+        if level != self._committed_level and level in ("MODERATE", "HIGH"):
             evidence_frame = self._select_evidence_frame(frame, level, risk_result)
             screenshot_path = self.evidence.try_capture(evidence_frame, level)
 
@@ -342,7 +359,7 @@ class MonitoringSession:
                 screenshot_path=screenshot_path,
             )
 
-        self._last_logged_level = level
+        self._committed_level = level
 
     def _select_evidence_frame(self, current_frame, level, risk_result):
         """
