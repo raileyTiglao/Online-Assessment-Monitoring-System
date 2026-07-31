@@ -22,6 +22,7 @@ from torchvision.models.detection import (
     fasterrcnn_resnet50_fpn,
     FasterRCNN_ResNet50_FPN_Weights
 )
+from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 import cv2
 import numpy as np
 from config import DetectionConfig, SystemConfig
@@ -82,10 +83,45 @@ class ObjectDetector:
         model   = fasterrcnn_resnet50_fpn(weights=weights)
         model.to(self.device)
         model.eval()
+
+        # COCO class IDs, per DetectionConfig (77 = cell phone)
+        self._target_ids = DetectionConfig.TARGET_CLASS_IDS
+        self._name_map   = DetectionConfig.TARGET_CLASS_NAMES
+
         print("[ObjectDetector] COCO model loaded.")
         return model
 
-    
+    def _load_custom_model(self, model_path: str):
+        """
+        Load a fine-tuned Faster R-CNN checkpoint (see train_fasterrcnn.py /
+        fasterrcnn_integration.py). Unlike the COCO model, the fine-tuned
+        head's label IDs are its own (background=0, mobile_device=1, ...)
+        and have nothing to do with COCO's IDs, so target_ids/name_map are
+        set to match the fine-tuned head instead of DetectionConfig's
+        COCO-specific TARGET_CLASS_IDS.
+        """
+        print(f"[ObjectDetector] Loading fine-tuned Faster R-CNN from {model_path}...")
+        model = fasterrcnn_resnet50_fpn(weights=None)
+        in_features = model.roi_heads.box_predictor.cls_score.in_features
+        model.roi_heads.box_predictor = FastRCNNPredictor(
+            in_features, DetectionConfig.CUSTOM_NUM_CLASSES
+        )
+
+        state_dict = torch.load(model_path, map_location=self.device)
+        model.load_state_dict(state_dict)
+        model.to(self.device)
+        model.eval()
+
+        # Fine-tuned label IDs are 1..CUSTOM_NUM_CLASSES-1 (0 is background).
+        # Our current training pipeline only produces a single foreground
+        # class, "mobile_device" = label 1.
+        self._target_ids = list(range(1, DetectionConfig.CUSTOM_NUM_CLASSES))
+        self._name_map   = {1: "Mobile Device"}
+
+        print("[ObjectDetector] Fine-tuned model loaded.")
+        return model
+
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -181,9 +217,9 @@ class ObjectDetector:
         scores_tensor = prediction["scores"].cpu().float().numpy()
         boxes_tensor  = prediction["boxes"].cpu().float().numpy()
 
-        target_ids = DetectionConfig.TARGET_CLASS_IDS
+        target_ids = self._target_ids
         threshold  = DetectionConfig.CONFIDENCE_THRESHOLD
-        name_map   = DetectionConfig.TARGET_CLASS_NAMES
+        name_map   = self._name_map
 
         boxes       = []
         scores      = []
