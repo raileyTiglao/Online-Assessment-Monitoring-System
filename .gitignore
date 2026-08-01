@@ -4,7 +4,12 @@ __pycache__/
 *.pyo
 .venv/
 venv/
+venv_download/
 env/
+
+# Downloaded training dataset (regenerate via download_openimages.py /
+# download_negatives.py rather than committing hundreds of MBs of images)
+openimages_voc/
 
 # Model weights (large files — don't commit, share separately or use Git LFS)
 *.pth
