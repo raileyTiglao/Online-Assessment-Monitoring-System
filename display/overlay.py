@@ -183,11 +183,23 @@ class OverlayRenderer:
         cv2.putText(frame, f"Distance: {pose.scale_ratio:.0%} of calibrated",
                     (10, 190), cv2.FONT_HERSHEY_SIMPLEX, 0.5, scale_color, 1)
 
+        # Gaze readout (iris offset from calibrated neutral, in eye widths).
+        # Shown even when gaze flagging is disabled, so the thresholds can be
+        # tuned by watching real values during a session.
+        if pose.gaze_valid:
+            gaze_color = (0, 0, 255) if pose.gaze_suspicious else (150, 150, 150)
+            gaze_text = f"Gaze: x={pose.gaze_x:+.3f} y={pose.gaze_y:+.3f}"
+        else:
+            gaze_color = (100, 100, 100)
+            gaze_text = "Gaze: -- (eyes closed)"
+        cv2.putText(frame, gaze_text, (10, 212),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, gaze_color, 1)
+
         if pose.drifted:
-            cv2.putText(frame, f"! {pose.reason}", (10, 215),
+            cv2.putText(frame, f"! {pose.reason}", (10, 236),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 165, 255), 2)
         elif pose.suspicious:
-            cv2.putText(frame, f"! {pose.reason}", (10, 215),
+            cv2.putText(frame, f"! {pose.reason}", (10, 236),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 255), 2)
 
     def _draw_temporal_panel(self, frame, snapshot: TemporalSnapshot,

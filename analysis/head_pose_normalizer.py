@@ -24,7 +24,7 @@ recommended" state instead.
 """
 
 from dataclasses import dataclass
-from config import HeadPoseConfig, CalibrationConfig
+from config import HeadPoseConfig, CalibrationConfig, GazeConfig
 from detection.head_pose import HeadPoseResult
 from analysis.calibration import CalibrationBaseline
 from analysis.one_euro_filter import OneEuroFilter
@@ -72,6 +72,15 @@ class NormalizedPose:
     pitch_suspicious:   bool = False
     roll_suspicious:    bool = False
     dropout_suspicious: bool = False
+
+    # Gaze (iris) — baseline-relative, in eye-width units. Catches the case
+    # head pose structurally cannot: eyes moving toward off-screen material
+    # while the head stays level. gaze_valid is False on blinks, where the
+    # iris is occluded and its position must not be trusted.
+    gaze_x:           float = 0.0
+    gaze_y:           float = 0.0
+    gaze_valid:       bool  = False
+    gaze_suspicious:  bool  = False
 
 
 class HeadPoseNormalizer:
@@ -154,7 +163,13 @@ class HeadPoseNormalizer:
         n_yaw, n_pitch, n_roll = self._smooth(n_yaw, n_pitch, n_roll)
         in_grace_period = time.time() < self._ready_at
 
-        yaw_susp = pitch_susp = roll_susp = False
+        # Gaze is measured against the neutral gaze captured at calibration,
+        # so what counts is deviation from where this examinee naturally
+        # looked — not an absolute screen position.
+        n_gaze_x = head_result.gaze_x - self._baseline.gaze_x
+        n_gaze_y = head_result.gaze_y - self._baseline.gaze_y
+
+        yaw_susp = pitch_susp = roll_susp = gaze_susp = False
 
         if drifted:
             # Distance from camera changed too much since calibration —
@@ -170,6 +185,14 @@ class HeadPoseNormalizer:
         else:
             yaw_susp, pitch_susp, roll_susp, reason = self._analyse(
                 n_yaw, n_pitch, n_roll)
+
+            # Gaze is only meaningful on frames where the iris was actually
+            # visible — blinks are skipped rather than read as a centred gaze.
+            if head_result.gaze_valid:
+                gaze_susp, gaze_reason = self._analyse_gaze(n_gaze_x, n_gaze_y)
+                if gaze_reason:
+                    reason = (f"{reason} | {gaze_reason}"
+                              if reason != "Normal" else gaze_reason)
 
         # Remember this pose so a later tracking dropout can tell which
         # direction the examinee was heading when the face was lost. Only
@@ -189,12 +212,41 @@ class HeadPoseNormalizer:
             roll=round(n_roll, 2),
             scale_ratio=round(scale_ratio, 3),
             drifted=drifted,
-            suspicious=(yaw_susp or pitch_susp or roll_susp),
+            suspicious=(yaw_susp or pitch_susp or roll_susp or gaze_susp),
             reason=reason,
             yaw_suspicious=yaw_susp,
             pitch_suspicious=pitch_susp,
             roll_suspicious=roll_susp,
+            gaze_x=round(n_gaze_x, 4),
+            gaze_y=round(n_gaze_y, 4),
+            gaze_valid=head_result.gaze_valid,
+            gaze_suspicious=gaze_susp,
         )
+
+    def _analyse_gaze(self, gaze_x: float, gaze_y: float) -> tuple:
+        """
+        Check baseline-relative gaze against the configured thresholds.
+
+        Horizontal and vertical are checked independently because the eye's
+        usable vertical range is considerably smaller than its horizontal
+        one — the eyelids clip it — so they warrant different sensitivities.
+
+        Returns (suspicious, reason). Always returns False when
+        GazeConfig.ENABLE_GAZE_FLAGGING is off, so the signal can be
+        observed and tuned before it is allowed to affect risk.
+        """
+        if not GazeConfig.ENABLE_GAZE_FLAGGING:
+            return False, ""
+
+        reasons = []
+        if abs(gaze_x) > GazeConfig.GAZE_H_THRESHOLD:
+            side = "left" if gaze_x < 0 else "right"
+            reasons.append(f"Eyes {side} ({gaze_x:+.3f} from baseline)")
+        if abs(gaze_y) > GazeConfig.GAZE_V_THRESHOLD:
+            updown = "up" if gaze_y < 0 else "down"
+            reasons.append(f"Eyes {updown} ({gaze_y:+.3f} from baseline)")
+
+        return bool(reasons), " | ".join(reasons)
 
     def _dropout_follows_suspicious_direction(self) -> bool:
         """

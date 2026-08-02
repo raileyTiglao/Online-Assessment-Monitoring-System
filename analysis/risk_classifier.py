@@ -86,6 +86,8 @@ class RiskClassifier:
          "Sustained head tilt",       "roll"),
         ("dropout_ratio", "DROPOUT_HIGH_RATIO", "DROPOUT_MODERATE_RATIO",
          "Face tracking lost while turned away", "dropout"),
+        ("gaze_ratio",    "GAZE_HIGH_RATIO",    "GAZE_MODERATE_RATIO",
+         "Eyes directed away from screen", "gaze"),
     )
 
     def __init__(self):

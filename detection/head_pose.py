@@ -27,7 +27,7 @@ import cv2
 import numpy as np
 import mediapipe as mp
 from dataclasses import dataclass
-from config import HeadPoseConfig
+from config import HeadPoseConfig, GazeConfig
 
 
 @dataclass
@@ -42,12 +42,23 @@ class HeadPoseResult:
         roll:          Lateral tilt in degrees
         scale:         Pixel distance between the two eye corners — a proxy
                        for distance-to-camera, used for drift detection
+        gaze_x:        Iris offset from eye centre, horizontal, as a
+                       fraction of eye width (+ = toward the examinee's
+                       right in image space, - = left). 0.0 = centred.
+        gaze_y:        Same, vertical (+ = downward, - = upward)
+        gaze_valid:    False when the eyes were too closed (blink/squint)
+                       for the iris position to be trusted — callers should
+                       ignore gaze_x/gaze_y on those frames rather than
+                       treating them as a centred gaze
     """
-    success: bool
-    yaw:     float = 0.0
-    pitch:   float = 0.0
-    roll:    float = 0.0
-    scale:   float = 0.0
+    success:    bool
+    yaw:        float = 0.0
+    pitch:      float = 0.0
+    roll:       float = 0.0
+    scale:      float = 0.0
+    gaze_x:     float = 0.0
+    gaze_y:     float = 0.0
+    gaze_valid: bool  = False
 
 
 class HeadPoseEstimator:
@@ -116,6 +127,7 @@ class HeadPoseEstimator:
         camera_matrix = self._build_camera_matrix(w, h)
         yaw, pitch, roll = self._solve_pose(image_points, camera_matrix)
         scale = self._compute_scale(image_points)
+        gaze_x, gaze_y, gaze_valid = self._compute_gaze(face_landmarks, w, h)
 
         return HeadPoseResult(
             success=True,
@@ -123,6 +135,9 @@ class HeadPoseEstimator:
             pitch=round(pitch, 2),
             roll=round(roll, 2),
             scale=round(scale, 2),
+            gaze_x=round(gaze_x, 4),
+            gaze_y=round(gaze_y, 4),
+            gaze_valid=gaze_valid,
         )
 
     def close(self):
@@ -133,6 +148,69 @@ class HeadPoseEstimator:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _compute_gaze(self, face_landmarks, w: int, h: int) -> tuple:
+        """
+        Estimate where the eyes are pointing, independently of head pose.
+
+        For each eye the iris centre is measured against the midpoint of the
+        eye's two corners, then divided by the eye's width. Using eye width
+        as the unit makes the result scale-free: the same glance yields the
+        same number whether the examinee sits near or far, and regardless of
+        their eye size. Both eyes are averaged when available.
+
+        Eyes that are too closed (blink, squint, or a heavy downward glance
+        that drops the lid) have their iris partly occluded, so its centre
+        drifts unpredictably. Those eyes are skipped, and if neither eye is
+        usable the frame is reported as gaze_valid=False rather than
+        silently returning a centred reading.
+
+        Returns:
+            (gaze_x, gaze_y, gaze_valid) — offsets in eye-width units,
+            positive x toward image-right, positive y downward
+        """
+        landmarks = face_landmarks.landmark
+
+        # Guard against a mesh without iris points (REFINE_LANDMARKS off).
+        if len(landmarks) <= max(GazeConfig.IRIS_CENTER_INDICES):
+            return 0.0, 0.0, False
+
+        def point(idx):
+            lm = landmarks[idx]
+            return np.array([lm.x * w, lm.y * h], dtype=np.float64)
+
+        iris_points = [point(i) for i in GazeConfig.IRIS_CENTER_INDICES]
+
+        offsets = []
+        for outer_i, inner_i, upper_i, lower_i in (GazeConfig.LEFT_EYE_LANDMARKS,
+                                                   GazeConfig.RIGHT_EYE_LANDMARKS):
+            outer, inner = point(outer_i), point(inner_i)
+            upper, lower = point(upper_i), point(lower_i)
+
+            eye_width = float(np.linalg.norm(outer - inner))
+            if eye_width <= 1e-6:
+                continue
+
+            # Skip this eye if the lid is too closed to trust the iris.
+            openness = float(np.linalg.norm(upper - lower)) / eye_width
+            if openness < GazeConfig.MIN_EYE_OPENNESS:
+                continue
+
+            eye_center = (outer + inner) / 2.0
+
+            # Pair each eye with its nearest iris landmark, rather than
+            # assuming a fixed index order — avoids silently mixing up the
+            # two eyes if MediaPipe's ordering ever differs.
+            iris = min(iris_points,
+                       key=lambda p: float(np.linalg.norm(p - eye_center)))
+
+            offsets.append((iris - eye_center) / eye_width)
+
+        if not offsets:
+            return 0.0, 0.0, False
+
+        mean_offset = np.mean(offsets, axis=0)
+        return float(mean_offset[0]), float(mean_offset[1]), True
 
     def _extract_image_points(self, face_landmarks, w: int, h: int) -> np.ndarray:
         """Extract the 6 key landmark positions as 2D pixel coordinates."""

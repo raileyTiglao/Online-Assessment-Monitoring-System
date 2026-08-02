@@ -143,6 +143,70 @@ class HeadPoseConfig:
     # of the way toward "suspicious" still establishes direction.
     DROPOUT_CONTEXT_FRACTION = 0.5   # 50% of YAW_/PITCH_THRESHOLD
 
+class GazeConfig:
+    """
+    Iris-based gaze estimation settings.
+
+    MediaPipe Face Mesh already returns iris landmarks whenever
+    HeadPoseConfig.REFINE_LANDMARKS is True (478 landmarks instead of 468),
+    so the eye data costs no extra inference — it was simply being discarded
+    before. Gaze closes the biggest blind spot in head-pose-only monitoring:
+    an examinee glancing down at a device while keeping their head level
+    produces almost no pose change, but a large iris shift.
+
+    Gaze is measured as the iris centre's offset from the eye centre,
+    expressed as a FRACTION OF EYE WIDTH so it stays comparable regardless
+    of how close the examinee sits or how large their eyes are. Like head
+    pose, it is then normalized against the calibration baseline, so what
+    matters is deviation from where they naturally looked while calibrating
+    — no separate "look at each screen corner" step is required.
+    """
+
+    # MediaPipe iris landmark indices (only present when REFINE_LANDMARKS).
+    IRIS_CENTER_INDICES = (468, 473)
+
+    # Eye corner + eyelid landmarks, per eye: (outer, inner, upper, lower)
+    LEFT_EYE_LANDMARKS  = (33, 133, 159, 145)
+    RIGHT_EYE_LANDMARKS = (263, 362, 386, 374)
+
+    # Eye openness below this fraction of eye width counts as a blink or
+    # squint, where the iris is partly occluded and its position is
+    # unreliable. Such frames are excluded rather than guessed at.
+    MIN_EYE_OPENNESS = 0.12
+
+    # --- Suspicion threshold ---
+    # Deviation (in eye-widths) from the calibrated neutral gaze before a
+    # frame counts as looking away. Horizontal and vertical are separate
+    # because the eye's usable vertical range is much smaller than its
+    # horizontal one — the eyelids cut it off.
+    #
+    # Tuned from real footage on this camera (7 frames: 4 looking normally
+    # at the screen, 3 looking away). The two axes turned out to be very
+    # unequal, so they are set on quite different logic:
+    #
+    #   VERTICAL is the strong signal. Normal screen use spanned only
+    #   +/-0.015, while every look-away frame read +0.030 to +0.091 — all
+    #   downward. Nothing about reading a screen requires looking down the
+    #   way a phone in the lap does, so the separation is clean. 0.035
+    #   leaves better than 2x margin over observed normal movement.
+    #
+    #   HORIZONTAL is weak and deliberately conservative. Normal scanning
+    #   across a wide monitor reached 0.086 — overlapping one of the
+    #   look-away frames (0.082) — so a sensitive threshold here would fire
+    #   during ordinary reading. 0.15 clears the normal range entirely and
+    #   acts only as a backstop for pronounced sideways gaze.
+    #
+    # Based on a small sample (4 neutral / 3 away); revisit with more data.
+    GAZE_H_THRESHOLD = 0.15    # horizontal, fraction of eye width
+    GAZE_V_THRESHOLD = 0.035   # vertical, the discriminating axis
+
+    # Master switch for whether gaze contributes to RISK CLASSIFICATION.
+    # When False, gaze is still computed, displayed on the overlay, and
+    # recorded — it simply cannot escalate a risk level. Set False to
+    # disable gaze flagging without touching any other code.
+    ENABLE_GAZE_FLAGGING = True
+
+
 class TemporalConfig:
     """
     Sliding window temporal analysis settings.
@@ -192,6 +256,14 @@ class TemporalConfig:
     # to persist far longer than a real pose deviation before it escalates.
     DROPOUT_HIGH_RATIO     = 0.85    # ~3.0s of near-continuous lost tracking
     DROPOUT_MODERATE_RATIO = 0.65
+
+    # --- Gaze (iris) thresholds ---
+    # Deliberately strict to start with: gaze is the newest and least-tuned
+    # signal, and eyes flick around constantly during normal reading, so it
+    # needs to be sustained well before it means anything. Only applies when
+    # GazeConfig.ENABLE_GAZE_FLAGGING is True.
+    GAZE_HIGH_RATIO        = 0.70
+    GAZE_MODERATE_RATIO    = 0.50
 
     # Buffer margin added on top of WINDOW_SECONDS when sizing the FrameBuffer
     # (monitoring/frame_buffer.py), so evidence capture can always look back

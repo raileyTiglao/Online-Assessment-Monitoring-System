@@ -36,6 +36,12 @@ class CalibrationBaseline:
                            the calibration window
         scale:             Average inter-eye pixel distance during
                            calibration — reference distance-to-camera
+        gaze_x, gaze_y:    Average iris offset (in eye-width units) while
+                           the examinee looked naturally at their screen.
+                           Later gaze readings are measured against this, so
+                           no separate screen-corner calibration is needed.
+        gaze_samples:      Number of frames the gaze baseline is based on
+                           (lower than sample_count — blinks are excluded)
         sample_count:      Number of face samples the average is based on
     """
     yaw: float
@@ -43,6 +49,9 @@ class CalibrationBaseline:
     roll: float
     scale: float
     sample_count: int
+    gaze_x: float = 0.0
+    gaze_y: float = 0.0
+    gaze_samples: int = 0
 
 
 class Calibrator:
@@ -66,6 +75,10 @@ class Calibrator:
         self._pitch_samples = []
         self._roll_samples = []
         self._scale_samples = []
+        # Gaze is sampled separately because blink frames are skipped, so
+        # there are generally fewer gaze samples than pose samples.
+        self._gaze_x_samples = []
+        self._gaze_y_samples = []
 
     # ------------------------------------------------------------------
     # Public API
@@ -78,9 +91,17 @@ class Calibrator:
         self._pitch_samples.clear()
         self._roll_samples.clear()
         self._scale_samples.clear()
+        self._gaze_x_samples.clear()
+        self._gaze_y_samples.clear()
 
     def add_sample(self, yaw: float, pitch: float, roll: float,
-                   scale: float = 0.0) -> None:
+                   scale: float = 0.0, gaze_x: float = None,
+                   gaze_y: float = None) -> None:
+        """
+        Record one calibration frame. Pass gaze_x/gaze_y only for frames
+        where the iris reading was valid (eyes open); omit them on blinks so
+        an occluded iris cannot skew the neutral-gaze baseline.
+        """
         if self._start_time is None:
             self.start()
         if self.elapsed_seconds() < CalibrationConfig.SETTLE_SECONDS:
@@ -89,6 +110,9 @@ class Calibrator:
         self._pitch_samples.append(pitch)
         self._roll_samples.append(roll)
         self._scale_samples.append(scale)
+        if gaze_x is not None and gaze_y is not None:
+            self._gaze_x_samples.append(gaze_x)
+            self._gaze_y_samples.append(gaze_y)
 
     def is_complete(self) -> bool:
         """True once the calibration duration has elapsed."""
@@ -136,10 +160,22 @@ class Calibrator:
             return CalibrationBaseline(yaw=0.0, pitch=0.0, roll=0.0,
                                         scale=0.0, sample_count=0)
 
+        # A gaze baseline needs enough open-eye frames to be meaningful; if
+        # too few survived (heavy blinking, poor lighting, glasses glare),
+        # fall back to zero so gaze is measured against a centred iris
+        # rather than against a baseline built from a handful of frames.
+        has_gaze = len(self._gaze_x_samples) >= CalibrationConfig.MIN_SAMPLES
+        if not has_gaze and self._gaze_x_samples:
+            print(f"[Calibrator] WARNING: Only {len(self._gaze_x_samples)} valid "
+                  f"gaze samples (eyes open) — gaze baseline defaults to centred.")
+
         return CalibrationBaseline(
             yaw=statistics.median(self._yaw_samples),
             pitch=statistics.median(self._pitch_samples),
             roll=statistics.median(self._roll_samples),
             scale=statistics.median(self._scale_samples),
             sample_count=len(self._yaw_samples),
+            gaze_x=statistics.median(self._gaze_x_samples) if has_gaze else 0.0,
+            gaze_y=statistics.median(self._gaze_y_samples) if has_gaze else 0.0,
+            gaze_samples=len(self._gaze_x_samples),
         )
