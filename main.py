@@ -201,9 +201,13 @@ class MonitoringSession:
 
             head_result = self.pose_estimator.estimate(frame)
             if head_result.success:
+                # Gaze is only passed when the iris was actually visible, so
+                # blink frames can't skew the neutral-gaze baseline.
                 self.calibrator.add_sample(
                     head_result.yaw, head_result.pitch, head_result.roll,
                     head_result.scale,
+                    gaze_x=head_result.gaze_x if head_result.gaze_valid else None,
+                    gaze_y=head_result.gaze_y if head_result.gaze_valid else None,
                 )
 
             display_frame = self.renderer.draw_calibration(frame, self.calibrator)
@@ -294,6 +298,7 @@ class MonitoringSession:
             pitch_suspicious=normalized_pose.pitch_suspicious,
             roll_suspicious=normalized_pose.roll_suspicious,
             dropout_suspicious=normalized_pose.dropout_suspicious,
+            gaze_suspicious=normalized_pose.gaze_suspicious,
         )
         snapshot = self.temporal.get_snapshot()
 

@@ -6,6 +6,8 @@ __pycache__/
 venv/
 venv_download/
 env/
+.pytest_cache/
+*.egg-info/
 
 # Downloaded training dataset (regenerate via download_openimages.py /
 # download_negatives.py rather than committing hundreds of MBs of images)
@@ -16,12 +18,35 @@ openimages_voc/
 *.pt
 models/
 
+# Training run outputs (train_fasterrcnn.py --output-dir, default below).
+# Holds best_model.pth, last_checkpoint.pth and epochs/ — all regenerable
+# by re-running training, and far too large for git.
+trained_model/
+
 # Session outputs (generated at runtime, not source code)
 session_report.json
 evidence_captures/
 
-# Firebase service account key — secret, never commit
+# Annotated videos written by test_on_video.py --out
+*.mp4
+*.avi
+*.mkv
+
+# --- Secrets: never commit ---
+# The Firebase key is expected at the first path. The wildcard is a safety
+# net: keys download from the console as e.g.
+# "<project>-firebase-adminsdk-xxxxx.json", and would otherwise be
+# committable until someone remembers to rename them.
 connection/firebase_credentials.json
+*firebase-adminsdk*.json
+*serviceAccount*.json
+.env
+.env.*
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
 
 # OS files
 .DS_Store

@@ -59,6 +59,7 @@ class TemporalSnapshot:
     pitch_ratio:    float = 0.0
     roll_ratio:     float = 0.0
     dropout_ratio:  float = 0.0
+    gaze_ratio:     float = 0.0
 
 
 class TemporalAnalyzer:
@@ -88,7 +89,8 @@ class TemporalAnalyzer:
 
     def update(self, device_detected: bool, yaw_suspicious: bool = False,
                pitch_suspicious: bool = False, roll_suspicious: bool = False,
-               dropout_suspicious: bool = False) -> None:
+               dropout_suspicious: bool = False,
+               gaze_suspicious: bool = False) -> None:
         """
         Record the current frame's signals with a timestamp, then prune
         any entries that have fallen outside the configured time window.
@@ -100,7 +102,7 @@ class TemporalAnalyzer:
         now = time.time()
         self._entries.append((now, device_detected, yaw_suspicious,
                               pitch_suspicious, roll_suspicious,
-                              dropout_suspicious))
+                              dropout_suspicious, gaze_suspicious))
         self._prune(now)
 
     def get_snapshot(self) -> TemporalSnapshot:
@@ -126,19 +128,21 @@ class TemporalAnalyzer:
         pitch_duration = 0.0
         roll_duration = 0.0
         dropout_duration = 0.0
+        gaze_duration = 0.0
 
         entries = list(self._entries)
         for i in range(1, len(entries)):
             (t_prev, device_prev, yaw_prev, pitch_prev,
-             roll_prev, dropout_prev) = entries[i - 1]
+             roll_prev, dropout_prev, gaze_prev) = entries[i - 1]
             t_curr = entries[i][0]
             dt = t_curr - t_prev
             if dt <= 0:
                 continue
 
-            # "Head suspicious" for dual-modal purposes means any pose axis
-            # OR a directionally-consistent tracking dropout.
-            head_prev = yaw_prev or pitch_prev or roll_prev or dropout_prev
+            # "Head suspicious" for dual-modal purposes means any pose axis,
+            # a directionally-consistent tracking dropout, or off-baseline gaze.
+            head_prev = (yaw_prev or pitch_prev or roll_prev
+                         or dropout_prev or gaze_prev)
 
             total_duration += dt
             if device_prev:
@@ -155,6 +159,8 @@ class TemporalAnalyzer:
                 roll_duration += dt
             if dropout_prev:
                 dropout_duration += dt
+            if gaze_prev:
+                gaze_duration += dt
 
         if total_duration <= 0:
             return TemporalSnapshot(0.0, 0.0, 0.0, 0.0, len(entries))
@@ -169,6 +175,7 @@ class TemporalAnalyzer:
             pitch_ratio=pitch_duration / total_duration,
             roll_ratio=roll_duration / total_duration,
             dropout_ratio=dropout_duration / total_duration,
+            gaze_ratio=gaze_duration / total_duration,
         )
 
     def reset(self) -> None:
@@ -206,11 +213,12 @@ class TemporalAnalyzer:
             in the current window (shouldn't normally happen if the
             corresponding risk level has already been triggered).
         """
-        axis_index = {"yaw": 2, "pitch": 3, "roll": 4, "dropout": 5}.get(axis)
+        axis_index = {"yaw": 2, "pitch": 3, "roll": 4,
+                      "dropout": 5, "gaze": 6}.get(axis)
 
         for entry in self._entries:
             timestamp, device = entry[0], entry[1]
-            head = entry[2] or entry[3] or entry[4] or entry[5]
+            head = entry[2] or entry[3] or entry[4] or entry[5] or entry[6]
 
             if require_device:
                 if device and head:
