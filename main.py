@@ -285,8 +285,16 @@ class MonitoringSession:
         # 3. Normalize against calibration baseline; detects distance drift
         normalized_pose = self.normalizer.normalize(head_result)
 
-        # 4. Temporal analysis (time-based sliding window aggregation)
-        self.temporal.update(device_detected, normalized_pose.suspicious)
+        # 4. Temporal analysis (time-based sliding window aggregation).
+        # Each pose axis is passed separately so the analyzer can hold it to
+        # its own threshold instead of blending them into one signal.
+        self.temporal.update(
+            device_detected,
+            yaw_suspicious=normalized_pose.yaw_suspicious,
+            pitch_suspicious=normalized_pose.pitch_suspicious,
+            roll_suspicious=normalized_pose.roll_suspicious,
+            dropout_suspicious=normalized_pose.dropout_suspicious,
+        )
         snapshot = self.temporal.get_snapshot()
 
         # 5. Risk classification
@@ -380,8 +388,13 @@ class MonitoringSession:
         if level != "HIGH":
             return current_frame
 
+        # trigger_type is either "dual_modal" or "<axis>_only" — in the
+        # latter case look up the onset of that specific axis, so the
+        # captured frame shows the behavior that actually escalated.
         require_device = (risk_result.trigger_type == "dual_modal")
-        onset_timestamp = self.temporal.get_onset_timestamp(require_device=require_device)
+        axis = None if require_device else risk_result.trigger_type.removesuffix("_only")
+        onset_timestamp = self.temporal.get_onset_timestamp(
+            require_device=require_device, axis=axis)
 
         if onset_timestamp is None:
             return current_frame

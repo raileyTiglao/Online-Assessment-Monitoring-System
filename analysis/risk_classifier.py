@@ -59,8 +59,9 @@ class RiskClassifier:
 
     HIGH risk has two independent trigger paths:
       - Dual-modal:      both device AND head pose co-occur >= HIGH_TRIGGER_RATIO
-      - Head-pose-only:  head pose alone >= HEAD_ONLY_HIGH_RATIO
-                         (captures sustained downward gaze without visible device)
+      - Per-axis:        any single axis (pitch/yaw/roll/dropout) sustained
+                         past its OWN threshold — captures e.g. prolonged
+                         downward gaze with no visible device
 
     Usage:
         classifier = RiskClassifier()
@@ -71,10 +72,25 @@ class RiskClassifier:
     # Risk levels ordered lowest to highest, used to detect escalation
     _LEVEL_ORDER = {"LOW": 0, "MODERATE": 1, "HIGH": 2}
 
+    # Per-axis rules, checked in order. Each entry is:
+    #   (snapshot attribute, HIGH ratio, MODERATE ratio,
+    #    human-readable label, trigger_type stem)
+    # Ordered most- to least-specific so the reported trigger names the
+    # behavior that actually drove the escalation.
+    _AXIS_RULES = (
+        ("pitch_ratio",   "PITCH_HIGH_RATIO",   "PITCH_MODERATE_RATIO",
+         "Sustained downward tilt",   "pitch"),
+        ("yaw_ratio",     "YAW_HIGH_RATIO",     "YAW_MODERATE_RATIO",
+         "Sustained sideways turn",   "yaw"),
+        ("roll_ratio",    "ROLL_HIGH_RATIO",    "ROLL_MODERATE_RATIO",
+         "Sustained head tilt",       "roll"),
+        ("dropout_ratio", "DROPOUT_HIGH_RATIO", "DROPOUT_MODERATE_RATIO",
+         "Face tracking lost while turned away", "dropout"),
+    )
+
     def __init__(self):
         self._moderate_ratio = TemporalConfig.MODERATE_TRIGGER_RATIO
         self._high_ratio     = TemporalConfig.HIGH_TRIGGER_RATIO
-        self._head_only_high = TemporalConfig.HEAD_ONLY_HIGH_RATIO
         self._last_level = "LOW"
 
     # ------------------------------------------------------------------
@@ -87,8 +103,10 @@ class RiskClassifier:
 
         Rules (checked in order of severity):
             HIGH (dual-modal):    both_ratio >= HIGH_TRIGGER_RATIO
-            HIGH (head-only):     head_ratio >= HEAD_ONLY_HIGH_RATIO
-            MODERATE:             device_ratio or head_ratio >= MODERATE_TRIGGER_RATIO
+            HIGH (per-axis):      pitch/yaw/roll/dropout ratio >= that
+                                   axis's own HIGH threshold
+            MODERATE:             device_ratio >= MODERATE_TRIGGER_RATIO, or
+                                   any axis >= its own MODERATE threshold
             LOW:                  otherwise
 
         Args:
@@ -122,6 +140,12 @@ class RiskClassifier:
         """
         Pure decision logic returning (level, trigger_description, trigger_type).
         Isolated for easy unit testing.
+
+        Each pose axis is evaluated against its OWN thresholds rather than a
+        single shared one, because the axes differ substantially in how noisy
+        they are (see TemporalConfig). All HIGH conditions are checked before
+        any MODERATE condition, so a quiet-but-decisive signal is never
+        masked by a noisier one sitting at a lower level.
         """
         # --- HIGH: dual-modal (device + head pose co-occurring) ---
         if snapshot.both_ratio >= self._high_ratio:
@@ -129,20 +153,27 @@ class RiskClassifier:
                        f"co-occurred {snapshot.both_ratio:.0%} of window")
             return "HIGH", trigger, "dual_modal"
 
-        # --- HIGH: head-pose-only (sustained gaze deviation alone) ---
-        if snapshot.head_ratio >= self._head_only_high:
-            trigger = (f"Sustained head pose: suspicious orientation "
-                       f"active {snapshot.head_ratio:.0%} of window "
-                       f"(threshold {self._head_only_high:.0%})")
-            return "HIGH", trigger, "head_only"
+        # --- HIGH: any single axis sustained past its own threshold ---
+        for attr, high_name, _, label, stem in self._AXIS_RULES:
+            ratio = getattr(snapshot, attr)
+            high_threshold = getattr(TemporalConfig, high_name)
+            if ratio >= high_threshold:
+                trigger = (f"{label}: active {ratio:.0%} of window "
+                           f"(threshold {high_threshold:.0%})")
+                return "HIGH", trigger, f"{stem}_only"
 
-        # --- MODERATE: either signal alone, less sustained ---
+        # --- MODERATE: device alone ---
         if snapshot.device_ratio >= self._moderate_ratio:
             trigger = (f"Device detected {snapshot.device_ratio:.0%} of window")
             return "MODERATE", trigger, "device_only"
 
-        if snapshot.head_ratio >= self._moderate_ratio:
-            trigger = (f"Suspicious head pose {snapshot.head_ratio:.0%} of window")
-            return "MODERATE", trigger, "head_moderate"
+        # --- MODERATE: any single axis past its own moderate threshold ---
+        for attr, _, moderate_name, label, stem in self._AXIS_RULES:
+            ratio = getattr(snapshot, attr)
+            moderate_threshold = getattr(TemporalConfig, moderate_name)
+            if ratio >= moderate_threshold:
+                trigger = (f"{label}: active {ratio:.0%} of window "
+                           f"(threshold {moderate_threshold:.0%})")
+                return "MODERATE", trigger, f"{stem}_moderate"
 
         return "LOW", "No sustained suspicious signals", "none"

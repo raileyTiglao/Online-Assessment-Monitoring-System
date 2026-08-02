@@ -203,7 +203,10 @@ class OverlayRenderer:
                     cv2.FONT_HERSHEY_SIMPLEX, 0.52, (200, 200, 200), 1)
 
         ratio_text = (f"Device: {snapshot.device_ratio:.0%}  "
-                      f"Head: {snapshot.head_ratio:.0%}  "
+                      f"Pitch: {snapshot.pitch_ratio:.0%}  "
+                      f"Yaw: {snapshot.yaw_ratio:.0%}  "
+                      f"Roll: {snapshot.roll_ratio:.0%}  "
+                      f"Lost: {snapshot.dropout_ratio:.0%}  "
                       f"Both: {snapshot.both_ratio:.0%}")
         cv2.putText(frame, ratio_text, (10, panel_y + 48),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.52, (200, 200, 200), 1)

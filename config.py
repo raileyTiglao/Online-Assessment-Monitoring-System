@@ -128,6 +128,21 @@ class HeadPoseConfig:
     FILTER_BETA       = 0.007   # higher = more responsive to fast movement
     FILTER_D_CUTOFF   = 1.0
 
+    # --- Direction-aware dropout ---
+    # When MediaPipe loses the face we cannot see WHY it was lost. Treating
+    # every dropout as suspicious caused false HIGH flags for simply looking
+    # UP (tilting back hides the eyes/brow and breaks the face mesh just as
+    # readily as looking down does).
+    #
+    # Instead, the last valid pose before tracking was lost decides whether
+    # the dropout counts: if the examinee was already trending downward or
+    # sideways, the loss is treated as a continuation of that movement. If
+    # they were facing forward or tilting up, it is not counted.
+    #
+    # Expressed as a fraction of the normal thresholds, so a pose only part
+    # of the way toward "suspicious" still establishes direction.
+    DROPOUT_CONTEXT_FRACTION = 0.5   # 50% of YAW_/PITCH_THRESHOLD
+
 class TemporalConfig:
     """
     Sliding window temporal analysis settings.
@@ -149,12 +164,34 @@ class TemporalConfig:
     HIGH_TRIGGER_RATIO     = 0.50    # 40% of window = ~1.4 seconds of both signals
                                       # co-occurring. Lowered further for responsiveness.
 
-    # Head-pose-only HIGH risk threshold.
-    # If the student sustains a suspicious head orientation for this fraction
-    # of the window WITHOUT any device being detected, that alone escalates
-    # to HIGH. Captures behaviors like prolonged downward gaze without a visible device.
-    HEAD_ONLY_HIGH_RATIO   = 0.65    # 55% of window = ~1.9 seconds sustained head pose alone
-                                      # Still stricter than dual-modal since it's a single signal
+    # --- Per-axis sustained-behavior thresholds ---
+    # Each pose axis is tracked on its own sliding-window ratio rather than
+    # being collapsed into one blended "head suspicious" signal, because the
+    # axes have very different noise floors in practice. Measured on this
+    # setup: a deliberate, sustained downward look reads only ~+20 degrees
+    # of normalized pitch, while merely shifting in one's seat can swing
+    # normalized yaw by 34-40 degrees. Forcing both through a single ratio
+    # meant the threshold was necessarily wrong for at least one of them.
+    #
+    # Pitch is therefore the most sensitive (quiet, reliable signal) and yaw
+    # /roll are stricter (noisy signals that need more sustained evidence
+    # before they mean anything).
+    PITCH_HIGH_RATIO       = 0.60    # ~2.1s of sustained downward tilt
+    YAW_HIGH_RATIO         = 0.75    # ~2.6s — stricter, yaw is the noisy axis
+    ROLL_HIGH_RATIO        = 0.75    # ~2.6s — same reasoning as yaw
+
+    PITCH_MODERATE_RATIO   = 0.35
+    YAW_MODERATE_RATIO     = 0.50
+    ROLL_MODERATE_RATIO    = 0.50
+
+    # --- Lost-face-tracking (dropout) thresholds ---
+    # Dropout is tracked as its own signal rather than being folded into the
+    # pose axes. It is deliberately the STRICTEST threshold: losing the face
+    # is weak, ambiguous evidence on its own (the system cannot tell a
+    # phone-in-lap glance from someone leaning back to stretch), so it needs
+    # to persist far longer than a real pose deviation before it escalates.
+    DROPOUT_HIGH_RATIO     = 0.85    # ~3.0s of near-continuous lost tracking
+    DROPOUT_MODERATE_RATIO = 0.65
 
     # Buffer margin added on top of WINDOW_SECONDS when sizing the FrameBuffer
     # (monitoring/frame_buffer.py), so evidence capture can always look back
