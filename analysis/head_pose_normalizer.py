@@ -64,6 +64,15 @@ class NormalizedPose:
     suspicious:  bool  = False
     reason:      str   = "No face detected"
 
+    # Per-axis breakdown of what made this frame suspicious. Tracked
+    # separately (rather than only as the blended `suspicious` flag) so the
+    # temporal window can hold each axis to its own threshold — see
+    # TemporalConfig's PITCH_/YAW_/ROLL_ ratios.
+    yaw_suspicious:     bool = False
+    pitch_suspicious:   bool = False
+    roll_suspicious:    bool = False
+    dropout_suspicious: bool = False
+
 
 class HeadPoseNormalizer:
     """
@@ -91,6 +100,13 @@ class HeadPoseNormalizer:
                                            HeadPoseConfig.FILTER_D_CUTOFF)
         self._ready_at = time.time() + CalibrationConfig.POST_CALIBRATION_GRACE_SECONDS
 
+        # Last successfully tracked normalized pose, used to decide whether a
+        # subsequent tracking dropout should count as suspicious (see
+        # _dropout_follows_suspicious_direction). None until the first face
+        # is seen, so dropout before any successful track never counts.
+        self._last_valid_yaw = None
+        self._last_valid_pitch = None
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -108,44 +124,60 @@ class HeadPoseNormalizer:
             and suspicion flag
         """
         if not head_result.success:
-            # A lost face is itself a signal, not a neutral one — MediaPipe's
-            # face mesh is least stable during exactly the poses we want to
-            # catch (steep downward tilt, turning away, occlusion). Scoring
-            # dropout as "not suspicious" was erasing that behavior from the
-            # temporal window instead of counting toward it. The sliding
-            # window's ratio thresholds already require sustained dropout
-            # before this escalates risk, so brief blinks/glitches are
-            # naturally filtered out.
+            # A lost face is a signal, but a DIRECTIONAL one. MediaPipe's
+            # mesh breaks during steep downward tilt and turning away — the
+            # behavior we want to catch — but equally when someone simply
+            # leans back and looks UP, which we do not. Since we cannot see
+            # why tracking was lost, the last valid pose decides: if the
+            # examinee was already heading down or sideways, the dropout
+            # continues that movement and counts. Facing forward or tilting
+            # up, it does not. Dropout also carries its own (stricter)
+            # sliding-window threshold, so it must persist notably longer
+            # than a real pose deviation before escalating risk.
+            counts = self._dropout_follows_suspicious_direction()
+            reason = ("No face detected — continuing suspicious head movement"
+                      if counts else
+                      "No face detected — no prior suspicious direction")
             return NormalizedPose(
                 success=False,
-                suspicious=True,
-                reason="No face detected — possible occlusion or off-camera movement",
+                suspicious=counts,
+                dropout_suspicious=counts,
+                reason=reason,
             )
 
         scale_ratio = self._compute_scale_ratio(head_result.scale)
         drifted = abs(scale_ratio - 1.0) > CalibrationConfig.SCALE_DRIFT_TOLERANCE
 
-        n_yaw   = head_result.yaw   - self._baseline.yaw
-        n_pitch = head_result.pitch - self._baseline.pitch
-        n_roll  = head_result.roll  - self._baseline.roll
+        n_yaw   = self._wrap_delta(head_result.yaw   - self._baseline.yaw)
+        n_pitch = self._wrap_delta(head_result.pitch - self._baseline.pitch)
+        n_roll  = self._wrap_delta(head_result.roll  - self._baseline.roll)
         n_yaw, n_pitch, n_roll = self._smooth(n_yaw, n_pitch, n_roll)
         in_grace_period = time.time() < self._ready_at
+
+        yaw_susp = pitch_susp = roll_susp = False
 
         if drifted:
             # Distance from camera changed too much since calibration —
             # the baseline (and therefore these normalized angles) can no
             # longer be trusted. Suppress suspicion rather than risk a
             # false positive; surface a clear recalibration prompt instead.
-            suspicious = False
             direction = "closer" if scale_ratio > 1.0 else "farther"
             reason = (f"Moved {direction} from camera "
                       f"({scale_ratio:.0%} of calibrated distance) — "
                       f"press R to recalibrate")
         elif in_grace_period:
-            suspicious = False
             reason = "Settling after calibration..."
         else:
-            suspicious, reason = self._analyse(n_yaw, n_pitch, n_roll)
+            yaw_susp, pitch_susp, roll_susp, reason = self._analyse(
+                n_yaw, n_pitch, n_roll)
+
+        # Remember this pose so a later tracking dropout can tell which
+        # direction the examinee was heading when the face was lost. Only
+        # recorded while the baseline is trustworthy — a drifted reading
+        # would give the dropout check a misleading direction.
+        if not drifted:
+            self._last_valid_yaw = n_yaw
+            self._last_valid_pitch = n_pitch
 
         return NormalizedPose(
             success=True,
@@ -157,9 +189,33 @@ class HeadPoseNormalizer:
             roll=round(n_roll, 2),
             scale_ratio=round(scale_ratio, 3),
             drifted=drifted,
-            suspicious=suspicious,
+            suspicious=(yaw_susp or pitch_susp or roll_susp),
             reason=reason,
+            yaw_suspicious=yaw_susp,
+            pitch_suspicious=pitch_susp,
+            roll_suspicious=roll_susp,
         )
+
+    def _dropout_follows_suspicious_direction(self) -> bool:
+        """
+        Decide whether a tracking dropout should count as suspicious, based
+        on the last pose seen before the face was lost.
+
+        Counts only if the examinee was already heading DOWN or SIDEWAYS —
+        the directions consistent with looking at something off-screen. A
+        forward-facing or upward-tilted last pose does not count, which is
+        what stops "leaning back and looking up" from escalating to HIGH.
+
+        Returns False when no face has been tracked yet this session, so
+        dropout before the first successful track is never counted.
+        """
+        if self._last_valid_yaw is None or self._last_valid_pitch is None:
+            return False
+
+        fraction = HeadPoseConfig.DROPOUT_CONTEXT_FRACTION
+        heading_down = self._last_valid_pitch > HeadPoseConfig.PITCH_THRESHOLD * fraction
+        heading_sideways = abs(self._last_valid_yaw) > HeadPoseConfig.YAW_THRESHOLD * fraction
+        return heading_down or heading_sideways
         
     
     def _smooth(self, yaw, pitch, roll):
@@ -173,6 +229,26 @@ class HeadPoseNormalizer:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _wrap_delta(delta: float) -> float:
+        """
+        Wrap an angle difference into [-180, +180].
+
+        cv2.decomposeProjectionMatrix returns Euler angles on a circular
+        range, and with this 3D face model the resting pitch lands near
+        -160 degrees — only ~20 degrees from the -180/+180 seam. Tilting the
+        head up far enough pushes the raw value across that seam, where it
+        reappears as +178. Plain subtraction then reports
+        178 - (-160) = +338 degrees, which sails past PITCH_THRESHOLD and is
+        reported as "Looking down" — the system reads a raised head as a
+        lowered one and escalates to HIGH.
+
+        Wrapping maps that +338 back to -22, i.e. "looking up by 22 degrees",
+        which correctly fails the downward check. Applied to all three axes
+        since any of them can cross their seam.
+        """
+        return (delta + 180.0) % 360.0 - 180.0
 
     def _compute_scale_ratio(self, current_scale: float) -> float:
         """
@@ -191,19 +267,26 @@ class HeadPoseNormalizer:
         Only called when NOT drifted — i.e. the examinee is at approximately
         the same distance from the camera as during calibration, so the
         baseline is still valid.
+
+        Returns:
+            (yaw_suspicious, pitch_suspicious, roll_suspicious, reason)
+            Each axis is reported separately so the temporal window can hold
+            it to its own threshold rather than blending all three together.
         """
         reasons = []
 
-        if abs(yaw) > HeadPoseConfig.YAW_THRESHOLD:
+        yaw_susp = abs(yaw) > HeadPoseConfig.YAW_THRESHOLD
+        if yaw_susp:
             direction = "left" if yaw < 0 else "right"
             reasons.append(f"Head turned {direction} ({yaw:+.1f}° from baseline)")
 
-        if pitch > HeadPoseConfig.PITCH_THRESHOLD:
+        pitch_susp = pitch > HeadPoseConfig.PITCH_THRESHOLD
+        if pitch_susp:
             reasons.append(f"Looking down ({pitch:+.1f}° from baseline)")
 
-        if abs(roll) > HeadPoseConfig.ROLL_THRESHOLD:
+        roll_susp = abs(roll) > HeadPoseConfig.ROLL_THRESHOLD
+        if roll_susp:
             reasons.append(f"Head tilted ({roll:+.1f}° from baseline)")
 
-        if reasons:
-            return True, " | ".join(reasons)
-        return False, "Normal"
+        reason = " | ".join(reasons) if reasons else "Normal"
+        return yaw_susp, pitch_susp, roll_susp, reason
