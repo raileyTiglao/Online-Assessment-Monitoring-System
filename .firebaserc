@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "baandod-testing"
+  },
+  "targets": {
+    "baandod-testing": {
+      "hosting": {
+        "main": [
+          "baandod-testing"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

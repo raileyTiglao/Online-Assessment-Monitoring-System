@@ -1,5 +1,15 @@
-"""connection package — Firebase/Firestore persistence for session reports."""
+"""connection package — session report persistence (local PHP/MySQL or Firebase)."""
 
-from .firebase_db import FirebaseClient, FirestoreSessionRepository
+from .firebase_db import FirebaseClient, FirestoreSessionRepository, ExamRepository
+from .firebase_storage import FirebaseStorageUploader
+from .local_backend import (
+    LocalBackendClient, LocalSessionRepository, LocalExamRepository,
+    LocalStorageUploader,
+)
 
-__all__ = ["FirebaseClient", "FirestoreSessionRepository"]
+__all__ = [
+    "FirebaseClient", "FirestoreSessionRepository", "ExamRepository",
+    "FirebaseStorageUploader",
+    "LocalBackendClient", "LocalSessionRepository", "LocalExamRepository",
+    "LocalStorageUploader",
+]

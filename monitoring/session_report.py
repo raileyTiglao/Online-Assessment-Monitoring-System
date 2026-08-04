@@ -12,6 +12,7 @@ and evidence references.
 """
 
 import json
+import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Optional
@@ -28,8 +29,15 @@ class FlaggedEvent:
     roll:                 float
     device_detected:      bool
     behavioral_indicator: str
-    trigger:              str = ""            
+    trigger:              str = ""
     screenshot_path:      Optional[str] = None
+    # Baseline-relative iris offset (eye-widths) at the moment this event
+    # fired. gaze_valid is False when the eyes were too closed (blink/
+    # squint) for gaze to be measured — gaze_x/gaze_y are then stale
+    # zeros and should not be displayed as a real reading.
+    gaze_x:               float = 0.0
+    gaze_y:               float = 0.0
+    gaze_valid:           bool  = False
 
 
 class SessionReport:
@@ -47,8 +55,24 @@ class SessionReport:
 
     def __init__(self):
         self._session_start = datetime.now().isoformat()
+        # Timestamp-derived with a short random suffix so two sessions
+        # starting the same second on different machines can't collide.
+        self._session_uid = (f"sess_{self._session_start.replace(':', '').replace('.', '')}"
+                             f"_{uuid.uuid4().hex[:6]}")
         self._events: list[FlaggedEvent] = []
         self._baseline_info: Optional[dict] = None
+        self._exam_code: Optional[str] = None
+        self._professor_uid: Optional[str] = None
+        self._exam_title: Optional[str] = None
+
+    @property
+    def session_uid(self) -> str:
+        """
+        The unique ID for this session, generated once at construction —
+        needed early (before the session ends) so evidence screenshots can
+        be uploaded under the same ID that save_to_db() will later use.
+        """
+        return self._session_uid
 
     # ------------------------------------------------------------------
     # Public API
@@ -68,10 +92,25 @@ class SessionReport:
             "sample_count": sample_count,
         }
 
+    def set_exam_info(self, exam_code: Optional[str], professor_uid: Optional[str],
+                      exam_title: Optional[str]) -> None:
+        """
+        Record which exam/professor this session belongs to, so the
+        dashboard can scope visibility to the owning professor. Should be
+        called once at session start, right after the exam code (if any)
+        is resolved — mirrors set_baseline(). All three arguments are None
+        for a session that proceeded without a valid exam code.
+        """
+        self._exam_code = exam_code
+        self._professor_uid = professor_uid
+        self._exam_title = exam_title
+
     def log_event(self, risk_level: str, yaw: float, pitch: float, roll: float,
                   device_detected: bool, behavioral_indicator: str,
                   trigger: str = "",
-                  screenshot_path: Optional[str] = None) -> None:
+                  screenshot_path: Optional[str] = None,
+                  gaze_x: float = 0.0, gaze_y: float = 0.0,
+                  gaze_valid: bool = False) -> None:
         """Append a new flagged event to the session log."""
         self._events.append(FlaggedEvent(
             timestamp=datetime.now().isoformat(),
@@ -83,6 +122,9 @@ class SessionReport:
             behavioral_indicator=behavioral_indicator,
             trigger=trigger,
             screenshot_path=screenshot_path,
+            gaze_x=gaze_x,
+            gaze_y=gaze_y,
+            gaze_valid=gaze_valid,
         ))
 
     def save(self, filepath: str) -> dict:
@@ -109,10 +151,9 @@ class SessionReport:
         Persist this session to the database. Safe to call alongside save() —
         a DB failure must never lose the session, so it degrades to a warning.
         """
-        session_uid = f"sess_{self._session_start.replace(':', '').replace('.', '')}"
         try:
             session_id = repository.save_report(
-                self._build_report_dict(), session_uid, examinee_label)
+                self._build_report_dict(), self._session_uid, examinee_label)
             print(f"[SessionReport] Persisted to DB as session id={session_id}")
             return session_id
         except Exception as exc:
@@ -137,4 +178,7 @@ class SessionReport:
             "high_risk_count":      high_count,
             "moderate_risk_count":  moderate_count,
             "events":               [asdict(e) for e in self._events],
+            "exam_code":            self._exam_code,
+            "professor_uid":        self._professor_uid,
+            "exam_title":           self._exam_title,
         }

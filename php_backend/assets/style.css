@@ -1,0 +1,550 @@
+/* Visual language ported from the "beta" OJT dashboard (Manrope font, warm
+   dark palette, sidebar-drawer nav) so this PHP dashboard reads as the same
+   design system. Legacy variable names are aliased to the new tokens below
+   so existing component rules didn't need to be rewritten one-by-one. */
+:root {
+  --radius-lg: 28px;
+  --radius-md: 16px;
+  --radius-sm: 10px;
+  --font-base: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  --surface-1: var(--color-surface);
+  --page-plane: var(--color-bg);
+  --text-primary: var(--color-text);
+  --text-secondary: var(--color-text-muted);
+  --muted: var(--color-text-muted);
+  --gridline: var(--color-chip-bg);
+  --border: var(--color-border);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --color-bg: #0d0d12;
+  --color-surface: #17171f;
+  --color-border: #2a2a34;
+  --color-text: #e7e3d8;
+  --color-text-muted: #948f85;
+  --color-chip-bg: rgba(255, 255, 255, 0.06);
+
+  --color-accent: #c9a876;
+  --color-accent-dark: #a4835a;
+  --color-accent-soft: rgba(201, 168, 118, 0.16);
+  --color-accent-contrast: #16171d;
+
+  --status-good: #4cb26f;
+  --status-warning: #e0a83e;
+  --status-warning-contrast: #2a1f00;
+  --status-critical: #e2536b;
+
+  --hero-grad-1: #202b42;
+  --hero-grad-2: #10141f;
+  --hero-grad-3: #05070c;
+  --color-on-hero: #efe9db;
+  --color-on-hero-muted: rgba(239, 233, 219, 0.65);
+  --color-hero-surface: rgba(255, 255, 255, 0.06);
+  --color-hero-border: rgba(255, 255, 255, 0.14);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --color-bg: #eef1f2;
+  --color-surface: #ffffff;
+  --color-border: #d9dee1;
+  --color-text: #1c2530;
+  --color-text-muted: #626d78;
+  --color-chip-bg: rgba(0, 0, 0, 0.045);
+
+  --color-accent: #2c5f8a;
+  --color-accent-dark: #1c3f5c;
+  --color-accent-soft: rgba(44, 95, 138, 0.12);
+  --color-accent-contrast: #ffffff;
+
+  --status-good: #1f9c4a;
+  --status-warning: #c98a1c;
+  --status-warning-contrast: #2a1f00;
+  --status-critical: #cc3450;
+
+  --hero-grad-1: #d3e2ec;
+  --hero-grad-2: #a9c4d6;
+  --hero-grad-3: #7d9fb8;
+  --color-on-hero: #16232e;
+  --color-on-hero-muted: rgba(22, 35, 46, 0.65);
+  --color-hero-surface: rgba(255, 255, 255, 0.55);
+  --color-hero-border: rgba(22, 35, 46, 0.16);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.5 var(--font-base);
+  color: var(--text-primary);
+  background: var(--page-plane);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+h1, h2 { color: var(--text-primary); font-family: 'Playfair Display', serif; }
+h1 { font-size: 64px; font-weight: 800; margin: 0 0 20px; }
+h2 { font-size: 24px; font-weight: 400; font-style: italic; margin: 0 0 12px; }
+code {
+  font-family: ui-monospace, Consolas, monospace;
+  background: var(--gridline);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+a { color: inherit; }
+button, input, select {
+  font: inherit;
+  color: var(--text-primary);
+}
+input, select {
+  background: var(--page-plane);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+}
+button, .button-secondary {
+  cursor: pointer;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 9px 18px;
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  font-weight: 700;
+  font-family: var(--font-base);
+  text-decoration: none;
+  display: inline-block;
+  transition: background 0.15s ease;
+}
+button:hover, .button-secondary:hover { background: var(--color-accent-dark); }
+.button-secondary {
+  background: var(--surface-1);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+.button-secondary:hover { background: var(--color-chip-bg); }
+.page-error { color: var(--status-critical); }
+.empty-state { color: var(--text-secondary); padding: 12px 0; }
+
+/* ---------- Shell: fixed sidebar + topbar ---------- */
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--page-plane);
+}
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: 260px;
+  background: var(--surface-1);
+  border-right: 1px solid var(--border);
+  padding: 26px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  overflow-y: auto;
+  z-index: 40;
+  font-family: 'Bebas Neue', var(--font-base);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.sidebar-identity { display: flex; align-items: center; gap: 12px; }
+.avatar {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: var(--color-accent); color: var(--color-accent-contrast);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 14px; flex-shrink: 0;
+}
+.identity-text { display: flex; flex: 1; flex-direction: column; line-height: 1.3; overflow: hidden; min-width: 0; }
+.identity-name { font-weight: 700; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.identity-tag { font-size: 12px; color: var(--text-secondary); }
+
+.sidebar-nav { display: flex; flex-direction: column; gap: 4px; }
+.sidebar-nav-bottom { border-top: 1px solid var(--border); padding-top: 16px; margin-top: auto; }
+.nav-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px 14px; border-radius: var(--radius-sm);
+  color: var(--text-secondary); text-decoration: none;
+  font-size: 18px; font-weight: 400; letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.nav-item:hover { background: var(--page-plane); color: var(--text-primary); }
+.nav-item.active { background: var(--color-accent); color: var(--color-accent-contrast); }
+.nav-icon { width: 18px; text-align: center; }
+
+.sidebar-footer {
+  display: flex; flex-direction: column; gap: 2px;
+  font-size: 10px; font-weight: 600; color: var(--text-secondary); letter-spacing: 0.06em;
+}
+.sidebar-footer strong { font-size: 12px; font-weight: 800; letter-spacing: 0.04em; color: var(--text-primary); }
+
+/* Deliberate exception: the sidebar keeps a deep navy/gold "night" look
+   even in light mode (per reference) — only the main content area
+   follows the light/dark toggle. */
+[data-theme="light"] .sidebar {
+  background: #1c4863;
+  border-right-color: transparent;
+}
+[data-theme="light"] .sidebar .identity-name,
+[data-theme="light"] .sidebar-footer strong {
+  color: #f2e9da;
+}
+[data-theme="light"] .sidebar .identity-tag,
+[data-theme="light"] .sidebar .nav-item,
+[data-theme="light"] .sidebar-footer {
+  color: #c8d6e0;
+}
+[data-theme="light"] .sidebar .nav-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f2e9da;
+}
+[data-theme="light"] .sidebar .nav-item.active {
+  background: #d9a06c;
+  color: #1c4863;
+}
+[data-theme="light"] .sidebar .nav-icon { color: #d9a06c; }
+[data-theme="light"] .sidebar .avatar { background: #d9a06c; color: #1c4863; }
+[data-theme="light"] .sidebar-nav-bottom { border-top-color: rgba(255, 255, 255, 0.15); }
+
+/* ---------- Theme pill (minimalist, gradient-filled) ----------
+   One flat pill using the same hero-grad and color-on-hero tokens as the
+   hero panel, so it reads as the same "night sky" surface everywhere
+   rather than a one-off color. The tiny Three.js star field renders
+   inside it in both modes — dark mode reads as the normal
+   light-specks-on-navy starfield, light mode is the same field in the
+   hero's on-hero ink tone against the pale blue gradient. */
+.theme-pill {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 40px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 999px;
+  overflow: hidden;
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--hero-grad-1) 0%, var(--hero-grad-2) 55%, var(--hero-grad-3) 100%);
+  transition: background 0.3s ease;
+}
+
+.theme-pill__canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+.theme-pill__label {
+  position: relative;
+  z-index: 2;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-on-hero);
+}
+[data-theme="dark"] .theme-toggle-pill__label-light { display: none; }
+[data-theme="light"] .theme-toggle-pill__label-dark { display: none; }
+
+.app-main { padding: 28px 40px 48px; margin-left: 260px; }
+
+/* ---------- Login ---------- */
+
+.login-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--page-plane); }
+.login-form {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 36px;
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.login-form h1 { font-size: 18px; margin-bottom: 0; }
+.login-subtitle { color: var(--muted); margin-bottom: 16px; }
+.login-form label { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-top: 8px; }
+.login-error { color: var(--status-critical); font-size: 13px; }
+.login-form button { margin-top: 16px; }
+
+/* ---------- Badges ---------- */
+
+.risk-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+}
+.risk-badge--low { background: var(--status-good); }
+.risk-badge--moderate { background: var(--status-warning); color: var(--status-warning-contrast); }
+.risk-badge--high { background: var(--status-critical); }
+
+.exam-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--gridline);
+  color: var(--text-secondary);
+}
+.exam-badge--unassigned { color: var(--muted); font-style: italic; }
+
+.quick-links { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+
+/* ---------- Sessions ---------- */
+
+.filter-row { display: flex; gap: 10px; margin-bottom: 16px; }
+.filter-row input[type="search"] { flex: 1; }
+
+.session-list { display: flex; flex-direction: column; gap: 10px; }
+.session-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  color: var(--text-primary);
+  transition: border-color 0.15s ease;
+}
+.session-card:hover { border-color: var(--color-accent); }
+.session-card__main { display: flex; align-items: center; gap: 10px; }
+.session-card__meta { display: flex; gap: 16px; font-size: 13px; color: var(--muted); }
+
+.session-detail__header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.session-detail__header h1 { margin: 0; }
+.session-detail__summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px 16px;
+  margin: 0 0 24px;
+}
+.session-detail__summary dt { font-size: 12px; color: var(--muted); }
+.session-detail__summary dd { margin: 0; font-weight: 600; }
+.session-detail__section { margin-bottom: 32px; }
+
+.event-timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
+.event-timeline__item { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; }
+.event-timeline__header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.event-timeline__header time { color: var(--muted); font-size: 13px; }
+.event-timeline__pose { display: grid; grid-template-columns: repeat(4, auto); gap: 4px 12px; font-size: 13px; margin: 0 0 10px; }
+.event-timeline__pose dt { color: var(--muted); }
+.event-timeline__pose dd { margin: 0; font-weight: 600; }
+.screenshot-placeholder { background: var(--gridline); color: var(--muted); border-radius: var(--radius-sm); padding: 40px 0; text-align: center; font-size: 13px; }
+.screenshot-image { max-width: 100%; border-radius: var(--radius-sm); display: block; }
+
+/* ---------- Exams / tables ---------- */
+
+.page-section { margin-bottom: 40px; }
+.table-actions { display: flex; gap: 8px; align-items: center; }
+
+.two-column-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+  gap: 24px;
+}
+.two-column-layout .page-section { margin-bottom: 0; }
+@media (max-width: 900px) {
+  .two-column-layout { grid-template-columns: 1fr; }
+}
+
+/* ---------- Ornate frame (section encasing) ----------
+   A CSS/SVG-drawn homage to a gilded astrolabe-arch card frame: a double
+   accent-colored border ring and small corner medallions. Not a literal
+   image asset — built from box-shadow/gradients so it scales to any
+   content height. The section title sits as a label above the frame's
+   upper-left corner, rather than centered inside it. */
+.ornate-frame {
+  position: relative;
+  margin-top: 50px;
+  padding: 30px 36px 36px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  box-shadow:
+    0 0 0 1px var(--color-accent),
+    0 0 0 6px var(--page-plane),
+    0 0 0 7px var(--color-accent);
+}
+.ornate-frame::before {
+  content: '';
+  position: absolute;
+  inset: 14px;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 0 0, var(--color-accent) 0 3px, transparent 4px) top left / 18px 18px no-repeat,
+    radial-gradient(circle at 100% 0, var(--color-accent) 0 3px, transparent 4px) top right / 18px 18px no-repeat,
+    radial-gradient(circle at 0 100%, var(--color-accent) 0 3px, transparent 4px) bottom left / 18px 18px no-repeat,
+    radial-gradient(circle at 100% 100%, var(--color-accent) 0 3px, transparent 4px) bottom right / 18px 18px no-repeat;
+}
+.ornate-frame h2 {
+  position: absolute;
+  top: -50px;
+  left: 6px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 38px;
+  font-weight: 400;
+  font-style: italic;
+  color: var(--text-primary);
+}
+.ornate-frame h2::before {
+  content: '✦';
+  color: var(--color-accent);
+  font-size: 21px;
+}
+
+.exam-create-form { display: flex; gap: 10px; margin-bottom: 12px; }
+.exam-create-form input { flex: 1; }
+.exam-created-note { background: var(--gridline); border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 20px; }
+table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
+th { color: var(--muted); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+
+/* ---------- Intro star-shower overlay (plays once per browser session) ---------- */
+
+.intro-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  /* Purely decorative — never blocks clicks on the page underneath, even
+     mid-animation. A full-screen overlay swallowing every click for 2.6s
+     on every fresh tab (including sidebar nav) was a real, confirmed bug,
+     not just a UX nicety. */
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 70% 55% at 72% 18%, rgba(90, 116, 168, 0.35) 0%, rgba(28, 40, 70, 0.18) 40%, transparent 72%),
+    radial-gradient(ellipse 90% 70% at 25% 88%, rgba(46, 62, 104, 0.3) 0%, transparent 65%),
+    linear-gradient(160deg, #101726 0%, #080b14 45%, #04050a 100%);
+  overflow: hidden;
+  transition: opacity 0.6s ease;
+}
+.intro-overlay.is-hidden { opacity: 0; pointer-events: none; }
+.intro-field { position: absolute; inset: 0; }
+
+.intro-star {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  animation: intro-star-travel var(--travel-duration, 1.5s) cubic-bezier(0.4, 0, 0.7, 1) var(--travel-delay, 0s) forwards;
+}
+@keyframes intro-star-travel {
+  0% { transform: translate(0, 0) scale(0.4); opacity: 0; }
+  12% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translate(var(--travel-x), var(--travel-y)) scale(1); opacity: 0; }
+}
+
+.intro-star-core {
+  position: absolute;
+  top: calc(var(--star-size) / -2);
+  left: calc(var(--star-size) / -2);
+  width: var(--star-size);
+  height: var(--star-size);
+  filter:
+    drop-shadow(0 0 6px rgba(255, 255, 255, 0.95))
+    drop-shadow(0 0 20px rgba(226, 236, 255, 0.75))
+    drop-shadow(0 0 46px rgba(168, 196, 255, 0.4));
+}
+
+.intro-dot {
+  position: absolute;
+  width: var(--dot-size);
+  height: var(--dot-size);
+  border-radius: 50%;
+  background: #fff;
+  opacity: 0;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.55);
+  animation: intro-dot-twinkle var(--twinkle-duration, 2s) ease-in-out var(--twinkle-delay, 0s) infinite;
+}
+@keyframes intro-dot-twinkle {
+  0%, 100% { opacity: calc(var(--dot-peak) * 0.18); transform: scale(0.85); }
+  50% { opacity: var(--dot-peak); transform: scale(1); }
+}
+
+.intro-star-tail {
+  position: absolute;
+  top: calc(var(--tail-height) / -2);
+  right: 4px;
+  width: var(--tail-width);
+  height: var(--tail-height);
+  transform-origin: 100% 50%;
+  transform: rotate(135deg);
+  opacity: 0.9;
+}
+
+/* ---------- Hero (dashboard.php — dark "night sky" panel, constant across themes) ---------- */
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--hero-grad-1) 0%, var(--hero-grad-2) 55%, var(--hero-grad-3) 100%);
+  border-radius: var(--radius-lg);
+  padding: 40px 44px;
+  min-height: 400px;
+  display: flex;
+  color: var(--color-on-hero);
+  margin-bottom: 24px;
+}
+#heroCanvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+
+.hero-astrolabe {
+  position: absolute;
+  top: -70px;
+  right: -70px;
+  width: 340px;
+  height: 340px;
+  color: var(--color-accent);
+  opacity: 0.35;
+  z-index: 0;
+  pointer-events: none;
+}
+.hero-astrolabe-star {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: astrolabe-spin 40s linear infinite;
+}
+@keyframes astrolabe-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-astrolabe-star { animation: none; }
+}
+
+.hero-content {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 20px;
+}
+.hero-eyebrow { display: block; font-size: 14px; font-weight: 500; color: var(--color-on-hero-muted); margin-bottom: 6px; }
+.hero-greeting h1 { margin: 0; font-size: 42px; font-weight: 800; color: var(--color-on-hero); }
+
+.hero-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+.hero-kpi-tile {
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-dark));
+  border-radius: var(--radius-md);
+  padding: 18px 20px 20px;
+}
+.hero-kpi-label { display: block; font-size: 13px; font-weight: 500; color: rgba(255, 255, 255, 0.75); margin-bottom: 6px; }
+.hero-kpi-label strong { font-weight: 800; color: #fff; margin-right: 4px; }
+.main-num { display: block; font-size: 44px; font-weight: 900; line-height: 1; color: #fff; }
