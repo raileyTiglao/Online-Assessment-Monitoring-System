@@ -314,11 +314,53 @@ class SystemConfig:
 class DatabaseConfig:
     """Firebase (Firestore) persistence settings."""
 
+    # Which backend main.py talks to for exam lookup, screenshot upload,
+    # and session persistence:
+    #   "local"    = PHP/MySQL via XAMPP (php_backend/) — no cloud
+    #                account, no billing. See LocalBackendConfig below.
+    #   "firebase" = Firestore + Firebase Storage — needs a Firebase
+    #                project on the Blaze plan for Storage specifically.
+    BACKEND = "local"
+
     # Service account key downloaded from Firebase Console -> Project
     # Settings -> Service Accounts -> Generate new private key. Never
-    # commit this file — see .gitignore.
+    # commit this file — see .gitignore. Unused when BACKEND = "local".
     FIREBASE_CREDENTIALS_PATH = "connection/firebase_credentials.json"
     FIRESTORE_COLLECTION      = "sessions"
+    FIRESTORE_EXAMS_COLLECTION = "exams"
+    FIRESTORE_USERS_COLLECTION = "users"
 
     ENABLE_DB      = True    # False = JSON-only, unchanged legacy behavior
     KEEP_JSON      = True    # Keep writing session_report.json as a backup
+
+    # --- Evidence screenshot upload (Firebase Storage) ---
+    # Explicit, not inferred: firebase_admin.initialize_app() is called
+    # with no "storageBucket" option (see connection/firebase_db.py), and
+    # newer Firebase projects default to a "<project>.firebasestorage.app"
+    # bucket rather than the older "<project>.appspot.com" convention the
+    # Admin SDK guesses — inference isn't reliable, so name it directly.
+    STORAGE_BUCKET = "baandod-testing.firebasestorage.app"
+    EVIDENCE_STORAGE_PREFIX = "evidence"
+
+    # --- Exam code (links a session to the professor who owns it) ---
+    # False = a missing/invalid exam code doesn't block monitoring; the
+    # session proceeds "unassigned" (visible only to Admin in the dashboard)
+    # rather than stopping an examinee from taking the exam over a forgotten
+    # or mistyped code.
+    REQUIRE_EXAM_CODE = False
+
+
+class LocalBackendConfig:
+    """
+    Settings for the local PHP/MySQL backend (php_backend/, served by
+    XAMPP). Only used when DatabaseConfig.BACKEND = "local".
+    """
+
+    # Base URL of the deployed php_backend/ app — see php_backend's own
+    # README comments for how to get it running under XAMPP's Apache.
+    BASE_URL = "http://localhost/oams"
+
+    # Must match php_backend/config.php's API_KEY exactly — change both
+    # together. Ships as a placeholder in both places; not a real secret
+    # until you change it.
+    API_KEY = "change-me-to-a-random-string"

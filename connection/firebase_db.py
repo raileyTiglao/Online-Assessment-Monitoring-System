@@ -47,3 +47,27 @@ class FirestoreSessionRepository:
             .document(session_uid).set(document)
 
         return session_uid
+
+
+class ExamRepository:
+    """
+    Looks up exams created by professors through the dashboard, so the
+    Python monitoring app can resolve an exam code entered at session
+    start into the owning professor's UID + exam title.
+    """
+
+    def __init__(self, client: FirebaseClient):
+        self._db = client.db
+
+    def get_exam(self, code: str) -> dict | None:
+        """
+        Look up an exam by its code (the Firestore document ID).
+
+        Returns:
+            The exam's field dict (code, title, professorUid,
+            professorEmail, createdAt, active), or None if no exam with
+            this code exists.
+        """
+        doc = self._db.collection(DatabaseConfig.FIRESTORE_EXAMS_COLLECTION) \
+            .document(code).get()
+        return doc.to_dict() if doc.exists else None

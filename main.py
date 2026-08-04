@@ -55,7 +55,25 @@ from analysis import (
 )
 from monitoring import EvidenceCapture, SessionReport, FrameBuffer
 from display import OverlayRenderer
-from connection import FirebaseClient, FirestoreSessionRepository
+from connection import (
+    FirebaseClient, FirestoreSessionRepository, ExamRepository,
+    FirebaseStorageUploader,
+    LocalBackendClient, LocalSessionRepository, LocalExamRepository,
+    LocalStorageUploader,
+)
+
+
+def _backend_classes():
+    """
+    (ClientClass, ExamRepositoryClass, UploaderClass, SessionRepositoryClass)
+    for whichever backend DatabaseConfig.BACKEND selects. Every class pair
+    shares the same method signatures (get_exam, upload, save_report), so
+    the rest of MonitoringSession's logic doesn't need to know which
+    backend is active — only which classes to construct.
+    """
+    if DatabaseConfig.BACKEND == "local":
+        return LocalBackendClient, LocalExamRepository, LocalStorageUploader, LocalSessionRepository
+    return FirebaseClient, ExamRepository, FirebaseStorageUploader, FirestoreSessionRepository
 
 
 class MonitoringSession:
@@ -96,6 +114,13 @@ class MonitoringSession:
         # --- Webcam ---
         self.capture = None
 
+        # --- Backend client (local PHP/MySQL or Firebase, per
+        # DatabaseConfig.BACKEND — constructed once in _init_firebase(),
+        # reused for the exam-code lookup, screenshot upload, and final
+        # DB save). Name kept as _firebase_client for continuity even
+        # though it may hold a LocalBackendClient. ---
+        self._firebase_client = None
+
         # --- Frame timing for FPS display (resets on each recalibration) ---
         self._frame_count = 0
         self._timer_start = None
@@ -125,6 +150,11 @@ class MonitoringSession:
         if not self._open_camera():
             return
 
+        self._init_firebase()
+        if not self._resolve_exam_code():
+            self._cleanup()
+            return
+
         try:
             while True:
                 calibration_ok = self._run_calibration_phase()
@@ -151,9 +181,9 @@ class MonitoringSession:
             if DatabaseConfig.KEEP_JSON:
                 self.report.save(OutputConfig.SESSION_REPORT_FILE)
 
-            if DatabaseConfig.ENABLE_DB:
-                client = FirebaseClient()
-                self.report.save_to_db(FirestoreSessionRepository(client))
+            if DatabaseConfig.ENABLE_DB and self._firebase_client is not None:
+                _, _, _, SessionRepositoryClass = _backend_classes()
+                self.report.save_to_db(SessionRepositoryClass(self._firebase_client))
 
             print(f"[MonitoringSession] Evidence screenshots captured: "
                   f"{self.evidence.capture_count}")
@@ -174,6 +204,80 @@ class MonitoringSession:
 
         self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, CameraConfig.FRAME_WIDTH)
         self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, CameraConfig.FRAME_HEIGHT)
+        return True
+
+    # ------------------------------------------------------------------
+    # Internal: Firebase / exam code
+    # ------------------------------------------------------------------
+
+    def _init_firebase(self) -> None:
+        """
+        Construct the Firebase client once, up front, so it can be reused
+        for the exam-code lookup, screenshot upload, AND the final
+        save_to_db() call — previously this was only constructed late, in
+        the finally block, which was too late for the first two uses.
+        Degrades to cloud-features-disabled (not a crash) on failure, same
+        defensive posture as the existing save_to_db() try/except.
+        """
+        if not DatabaseConfig.ENABLE_DB:
+            return
+        ClientClass, *_ = _backend_classes()
+        try:
+            self._firebase_client = ClientClass()
+        except Exception as exc:
+            print(f"[MonitoringSession][WARN] Backend connection failed ({exc}). "
+                  f"Continuing without cloud/local-DB features (exam lookup, "
+                  f"screenshot upload, DB save).")
+
+    def _resolve_exam_code(self) -> bool:
+        """
+        Prompt for an exam code once at startup and, if valid, tag this
+        session's report + evidence uploads with the owning professor.
+
+        A missing/invalid code doesn't block monitoring unless
+        DatabaseConfig.REQUIRE_EXAM_CODE is True — by default the session
+        just proceeds "unassigned" (visible only to Admin in the
+        dashboard), so a forgotten code doesn't stop a student from
+        taking the exam.
+
+        Returns:
+            True to proceed with the session, False to abort (only
+            possible when REQUIRE_EXAM_CODE is True and no valid code
+            was entered).
+        """
+        code = professor_uid = exam_title = None
+        _, ExamRepositoryClass, UploaderClass, _ = _backend_classes()
+
+        if self._firebase_client is not None:
+            entered = input("Enter exam code (or press Enter to skip): ").strip()
+            if entered:
+                exam = ExamRepositoryClass(self._firebase_client).get_exam(entered)
+                if exam:
+                    code = entered
+                    professor_uid = exam.get("professorUid")
+                    exam_title = exam.get("title")
+                    print(f"[MonitoringSession] Exam code accepted: {exam_title}")
+                else:
+                    print(f"[MonitoringSession] Exam code '{entered}' not found.")
+                    if DatabaseConfig.REQUIRE_EXAM_CODE:
+                        print("[MonitoringSession] A valid exam code is required. Ending session.")
+                        return False
+                    print("[MonitoringSession] Proceeding unassigned.")
+            elif DatabaseConfig.REQUIRE_EXAM_CODE:
+                print("[MonitoringSession] A valid exam code is required. Ending session.")
+                return False
+
+        self.report.set_exam_info(code, professor_uid, exam_title)
+
+        uploader = None
+        if self._firebase_client is not None:
+            try:
+                uploader = UploaderClass()
+            except Exception as exc:
+                print(f"[MonitoringSession][WARN] Storage uploader init failed ({exc}). "
+                      f"Screenshots will stay local-only.")
+        self.evidence.set_context(self.report.session_uid, professor_uid, uploader)
+
         return True
 
     # ------------------------------------------------------------------
@@ -379,7 +483,19 @@ class MonitoringSession:
                 behavioral_indicator=normalized_pose.reason,
                 trigger=risk_result.trigger,
                 screenshot_path=screenshot_path,
+                gaze_x=normalized_pose.gaze_x,
+                gaze_y=normalized_pose.gaze_y,
+                gaze_valid=normalized_pose.gaze_valid,
             )
+
+            # Push to the dashboard immediately rather than waiting for the
+            # session to end — save_to_db() upserts (see save_session.php),
+            # so calling it again at session end is still safe/idempotent.
+            # Already has its own try/except (degrades to a warning, never
+            # raises), so no extra guarding needed here.
+            if DatabaseConfig.ENABLE_DB and self._firebase_client is not None:
+                _, _, _, SessionRepositoryClass = _backend_classes()
+                self.report.save_to_db(SessionRepositoryClass(self._firebase_client))
 
         self._committed_level = level
 
