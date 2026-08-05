@@ -3,4 +3,11 @@ torch==2.1.2
 torchvision==0.16.2
 mediapipe==0.10.5
 numpy==1.24.3
+requests>=2.31.0
 firebase-admin==7.5.0
+google-cloud-storage>=2.10.0
+# Pinned explicitly: firebase-admin/google-cloud-firestore would otherwise
+# resolve to a newer protobuf that mediapipe 0.10.5 can't load (breaks
+# FaceMesh construction with 'FieldDescriptor' object has no attribute
+# 'label'). 3.20.3 is the version both sides actually work with.
+protobuf==3.20.3

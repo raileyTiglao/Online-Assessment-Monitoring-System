@@ -48,6 +48,19 @@ connection/firebase_credentials.json
 *.sqlite
 *.sqlite3
 
+# Local PHP/MySQL backend — uploaded evidence screenshots aren't source
+php_backend/uploads/evidence/*
+!php_backend/uploads/evidence/.gitkeep
+
+# Firebase CLI / emulator local artifacts
+.firebase/
+firebase-debug.log
+firestore-debug.log
+storage-debug.log
+ui-debug.log
+*-debug.log
+emulator_data/
+
 # OS files
 .DS_Store
 Thumbs.db

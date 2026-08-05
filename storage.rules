@@ -1,0 +1,20 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // evidence/{professorUid}/{sessionId}/{fileName} — HIGH-risk screenshots
+    // uploaded by the Python app (Admin SDK, bypasses these rules). Readable
+    // only by the owning professor or an admin.
+    match /evidence/{professorUid}/{sessionId}/{fileName} {
+      allow read:  if request.auth != null &&
+                      (request.auth.uid == professorUid || request.auth.token.role == 'admin');
+      allow write: if false;
+    }
+
+    // evidence/_unassigned/{sessionId}/{fileName} — sessions started without
+    // a valid exam code. Admin-only visibility until/unless reassigned.
+    match /evidence/_unassigned/{sessionId}/{fileName} {
+      allow read:  if request.auth != null && request.auth.token.role == 'admin';
+      allow write: if false;
+    }
+  }
+}
