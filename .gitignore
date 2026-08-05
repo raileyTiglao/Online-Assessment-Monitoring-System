@@ -27,6 +27,9 @@ trained_model/
 session_report.json
 evidence_captures/
 
+# Local development log — working notebook, not project documentation
+logs.md
+
 # Annotated videos written by test_on_video.py --out
 *.mp4
 *.avi
