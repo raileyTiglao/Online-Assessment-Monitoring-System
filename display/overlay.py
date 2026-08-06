@@ -12,7 +12,7 @@ pose readout, temporal window stats, and FPS counter.
 
 import cv2
 import numpy as np
-from config import OutputConfig
+from config import OutputConfig, CalibrationConfig
 from analysis.head_pose_normalizer import NormalizedPose
 from analysis.temporal import TemporalSnapshot
 from analysis.calibration import Calibrator
@@ -55,40 +55,93 @@ class OverlayRenderer:
         cv2.rectangle(overlay, (0, 0), (w, h), (0, 0, 0), -1)
         frame = cv2.addWeighted(overlay, 0.35, frame, 0.65, 0)
 
-        # Title
-        cv2.putText(frame, "CALIBRATING...", (w // 2 - 160, h // 2 - 100),
-                    cv2.FONT_HERSHEY_DUPLEX, 1.3, (0, 200, 255), 3)
+        ok = calibrator.status_ok
+        guide_color = (0, 220, 0) if ok else (0, 165, 255)
 
-        # Instructions
-        cv2.putText(frame, "Please sit naturally and look at your screen",
-                    (w // 2 - 280, h // 2 - 50),
+        self._draw_silhouette(frame, w, h, guide_color)
+
+        # Title
+        cv2.putText(frame, "CALIBRATING", (w // 2 - 130, 52),
+                    cv2.FONT_HERSHEY_DUPLEX, 1.1, (0, 200, 255), 2)
+        cv2.putText(frame, "Align yourself with the outline and look at your screen",
+                    (w // 2 - 300, 84),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (235, 235, 235), 1)
+
+        # Live positioning feedback — the whole point of the guide, so it
+        # gets the most prominent placement below the silhouette.
+        status = calibrator.status
+        (tw, _), _ = cv2.getTextSize(status, cv2.FONT_HERSHEY_DUPLEX, 0.8, 2)
+        cv2.putText(frame, status, (w // 2 - tw // 2, h - 128),
+                    cv2.FONT_HERSHEY_DUPLEX, 0.8, guide_color, 2)
+
+        # Countdown + progress bar
+        remaining = calibrator.remaining_seconds()
+        cv2.putText(frame, f"{remaining:.1f}s", (w // 2 - 28, h - 96),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
-        # Countdown
-        remaining = calibrator.remaining_seconds()
-        cv2.putText(frame, f"{remaining:.1f}s remaining",
-                    (w // 2 - 100, h // 2),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-
-        # Progress bar
-        bar_x1, bar_y1 = w // 2 - 200, h // 2 + 40
-        bar_x2, bar_y2 = w // 2 + 200, h // 2 + 70
+        bar_x1, bar_y1 = w // 2 - 200, h - 80
+        bar_x2, bar_y2 = w // 2 + 200, h - 58
         progress = calibrator.progress_ratio()
         fill_x2  = int(bar_x1 + (bar_x2 - bar_x1) * progress)
-
         cv2.rectangle(frame, (bar_x1, bar_y1), (bar_x2, bar_y2), (100, 100, 100), 2)
         cv2.rectangle(frame, (bar_x1, bar_y1), (fill_x2, bar_y2), (0, 200, 255), -1)
 
-        # Sample count
-        cv2.putText(frame, f"Samples collected: {calibrator.sample_count}",
-                    (w // 2 - 130, h // 2 + 110),
+        # Sample count — only samples taken while correctly positioned are
+        # counted, so a stalled number tells the examinee their pose is
+        # being rejected even if the countdown keeps running.
+        cv2.putText(frame, f"Samples: {calibrator.sample_count}",
+                    (w // 2 - 70, h - 34),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, (200, 200, 200), 1)
-
-        cv2.putText(frame, "Press Q or ESC to cancel",
-                    (w // 2 - 110, h // 2 + 140),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (150, 150, 150), 1)
+        cv2.putText(frame, "Press Q or ESC to cancel", (w // 2 - 105, h - 12),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.48, (150, 150, 150), 1)
 
         return frame
+
+    def _draw_silhouette(self, frame, w: int, h: int, color) -> None:
+        """
+        Draw a seated-person outline for the examinee to align to: head
+        ellipse, neck, and shoulder curve.
+
+        Sized from CalibrationConfig's own guide values rather than picked
+        by eye, so what's drawn matches what the Calibrator actually
+        accepts — an outline the examinee can fill but the validator still
+        rejects would be worse than no outline at all.
+
+        Only the head is machine-checked (MediaPipe tracks the face, not
+        the body); the shoulders exist to make the intended posture
+        obvious, which a bare rectangle can't convey.
+        """
+        cfg = CalibrationConfig
+        cx = int(cfg.GUIDE_HEAD_CENTER[0] * w)
+        cy = int(cfg.GUIDE_HEAD_CENTER[1] * h)
+
+        # A head is roughly 2.2x as wide as the inter-eye distance the
+        # scale check measures; aim the outline at the middle of the
+        # accepted range so there's room on both sides.
+        mid_scale = (cfg.GUIDE_SCALE_MIN + cfg.GUIDE_SCALE_MAX) / 2.0
+        head_hw = int(1.1 * mid_scale * w)
+        head_hh = int(head_hw * 1.3)
+
+        cv2.ellipse(frame, (cx, cy), (head_hw, head_hh), 0, 0, 360, color, 2)
+
+        # Neck — short verticals from the jaw down toward the shoulders
+        neck_top = cy + head_hh
+        neck_bottom = neck_top + int(head_hh * 0.22)
+        for side in (-1, 1):
+            x = cx + side * int(head_hw * 0.42)
+            cv2.line(frame, (x, neck_top), (x, neck_bottom), color, 2)
+
+        # Shoulders — upper arc of a wide ellipse, clipped at the frame
+        # edge so it reads as a torso continuing out of view.
+        shoulder_hw = int(head_hw * 2.7)
+        shoulder_hh = int(head_hh * 0.95)
+        cv2.ellipse(frame, (cx, neck_bottom + shoulder_hh), (shoulder_hw, shoulder_hh),
+                    0, 185, 355, color, 2)
+
+        # Centre crosshair — a small, unobtrusive target for the nose,
+        # which is the landmark the position check actually uses.
+        cv2.line(frame, (cx - 9, cy), (cx + 9, cy), color, 1)
+        cv2.line(frame, (cx, cy - 9), (cx, cy + 9), color, 1)
 
     # ------------------------------------------------------------------
     # Public API — Monitoring Overlays
