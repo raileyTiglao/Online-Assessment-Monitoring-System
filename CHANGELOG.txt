@@ -1,0 +1,82 @@
+OAMS — Change Log
+==================
+Reconstructed from our conversation + file/git timestamps (schema.sql,
+connection/local_backend.py, and the two git repos). Day boundaries for
+Aug 3-4 are approximate — features were built across a continuous back-
+and-forth, not filed with exact timestamps.
+
+2026-08-02 — Local PHP/MySQL backend (replacing the Firebase plan)
+--------------------------------------------------------------------
+- Pivoted from Firebase Storage (blocked by the Blaze billing
+  requirement) to a local XAMPP stack: Apache + MySQL/MariaDB + PHP.
+- Built php_backend/: schema.sql (users/exams/sessions/events tables),
+  config.php, includes/db.php, auth.php, api_auth.php.
+- Pages: login.php, dashboard.php, exams.php, sessions.php,
+  session_detail.php, users.php.
+- API endpoints: api/resolve_exam_code.php, api/upload_evidence.php
+  (path-traversal-safe, validates real images), api/save_session.php
+  (upsert session + events).
+- Python side: connection/local_backend.py (LocalBackendClient,
+  LocalExamRepository, LocalStorageUploader, LocalSessionRepository),
+  wired into main.py and config.py (DatabaseConfig.BACKEND = "local").
+- Fixed a real bug in evidence_capture.py: the screenshot uploader's
+  returned (server-confirmed) path was being discarded in favor of the
+  client-constructed path — would have caused 404s on evidence images.
+- Created the admin account (john@gmail.com) and made incremental
+  per-event DB saves (not just at session end) so the dashboard reflects
+  new events within seconds.
+- Let admins (not just professors) create exams; exam creation now
+  redirects straight into the exam-filtered, auto-refreshing sessions
+  view so it's visible "live" as students join.
+
+2026-08-03 — GitHub repo + start of the visual redesign
+--------------------------------------------------------------------
+- Created a separate PRIVATE repo, github.com/VyTa-Yv4/oams-dashboard,
+  containing just the frontend (php_backend/), so the dashboard could be
+  continued on a different PC. Added seed_data.sql (placeholder
+  professor + exam + a HIGH-risk session) and AGENT_CONTEXT.md.
+- User shared a reference "beta" OJT/DTR dashboard design (Manrope font,
+  dark "night sky" palette, sidebar nav, animated Three.js starfield
+  hero, astrolabe SVG decoration, star-shower intro overlay).
+- Restyled OAMS to match: new CSS design-token system (dark + light
+  themes), sidebar navigation (initially an off-canvas drawer), removed
+  the old top nav bar, added the hero panel with a live Three.js
+  starfield + shooting stars + spinning astrolabe on dashboard.php, and
+  the one-time intro star-shower (gated to once per browser tab via
+  sessionStorage, since this is a multi-page app, not an SPA).
+
+2026-08-04 — Layout/theme refinement, page merge, cache fix, push
+--------------------------------------------------------------------
+- Sidebar: changed from an off-canvas drawer to a permanently fixed
+  sidebar; removed the top bar entirely.
+- Merged exams.php into sessions.php as one page (two-column layout:
+  Exams left, Sessions right; stacks to one column under 900px).
+- Added the "ornate frame" decorative card border (CSS-only double
+  accent ring + corner medallions) to the Exams/Sessions/Users section
+  cards, with the section title positioned as a label above the frame's
+  corner rather than centered inside it.
+- Theme toggle went through several iterations before landing: circular
+  icon button -> floating top-right button -> sliding sun/moon switch
+  in the sidebar -> final minimalist version: a single flat gradient
+  pill (reusing the hero's own --hero-grad-* colors) with a real tiny
+  Three.js star canvas rendered inside it in both themes (light mode
+  renders the same star field in a dark ink color instead of a sun
+  icon).
+- Root-caused and fixed a real stale-cache risk: none of the local CSS/
+  JS assets had cache-busting, despite being rewritten many times this
+  session. Added includes/assets.php (asset_url() appends each file's
+  filemtime() as ?v=...) and wired it into every page.
+- Synced all of the above into the oams-dashboard GitHub repo (deleted
+  the now-merged exams.php, updated AGENT_CONTEXT.md to describe the
+  new architecture) and pushed.
+
+Known follow-ups not yet done
+--------------------------------------------------------------------
+- API_KEY is still the shared placeholder "change-me-to-a-random-string"
+  in both php_backend/config.php and config.py's LocalBackendConfig —
+  needs changing before any real use.
+- No dedicated professor test account exists yet (only admin
+  john@gmail.com); admin-created exams have stood in for that so far.
+- No permanent fix for Avast deleting CLI account-provisioning scripts
+  (provision_accounts.php) — would need an AV exclusion the user sets
+  up themselves.
