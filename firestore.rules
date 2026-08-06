@@ -1,0 +1,37 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() { return request.auth != null; }
+    function role()       { return request.auth.token.role; }
+    function isAdmin()     { return isSignedIn() && role() == 'admin'; }
+    function isProfessor() { return isSignedIn() && role() == 'professor'; }
+
+    // users/{uid} — profile + role mirror of the Auth custom claim.
+    // Provisioned only by connection/bootstrap_admin.py (Admin SDK, bypasses
+    // these rules), never created by the client.
+    match /users/{uid} {
+      allow read:  if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // exams/{examCode} — doc ID is the human-typeable code the Python
+    // monitoring app looks up directly. A professor may create/manage only
+    // exams they own.
+    match /exams/{examCode} {
+      allow read:   if isAdmin() || (isProfessor() && resource.data.professorUid == request.auth.uid);
+      allow create: if isProfessor() && request.resource.data.professorUid == request.auth.uid;
+      allow update: if isAdmin() ||
+                       (isProfessor() && resource.data.professorUid == request.auth.uid &&
+                        request.resource.data.professorUid == resource.data.professorUid);
+      allow delete: if isAdmin();
+    }
+
+    // sessions/{sessionUid} — written only by the Python app via the Admin
+    // SDK, which bypasses these rules entirely. Client writes are always
+    // denied; reads are scoped to the owning professor or an admin.
+    match /sessions/{sessionUid} {
+      allow read:  if isAdmin() || (isProfessor() && resource.data.professor_uid == request.auth.uid);
+      allow write: if false;
+    }
+  }
+}
