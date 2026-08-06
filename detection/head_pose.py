@@ -60,6 +60,14 @@ class HeadPoseResult:
     gaze_y:     float = 0.0
     gaze_valid: bool  = False
 
+    # Where the face sits in the frame and how big it appears, both
+    # normalized to frame dimensions so they hold at any resolution. Used
+    # by the calibration positioning guide to check the examinee is seated
+    # consistently before their baseline is recorded.
+    face_center_x: float = 0.0   # 0.0 = left edge, 1.0 = right edge
+    face_center_y: float = 0.0   # 0.0 = top edge,  1.0 = bottom edge
+    face_scale_ratio: float = 0.0  # inter-eye distance / frame width
+
 
 class HeadPoseEstimator:
     """
@@ -129,6 +137,11 @@ class HeadPoseEstimator:
         scale = self._compute_scale(image_points)
         gaze_x, gaze_y, gaze_valid = self._compute_gaze(face_landmarks, w, h)
 
+        # Nose tip (LANDMARK_INDICES[0] = 1) as the face's position anchor —
+        # more stable than a bounding-box centre, which shifts as the head
+        # turns and different parts of the face become visible.
+        nose = image_points[0]
+
         return HeadPoseResult(
             success=True,
             yaw=round(yaw, 2),
@@ -138,6 +151,9 @@ class HeadPoseEstimator:
             gaze_x=round(gaze_x, 4),
             gaze_y=round(gaze_y, 4),
             gaze_valid=gaze_valid,
+            face_center_x=round(nose[0] / w, 4),
+            face_center_y=round(nose[1] / h, 4),
+            face_scale_ratio=round(scale / w, 4),
         )
 
     def close(self):

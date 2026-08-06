@@ -77,6 +77,54 @@ class CalibrationConfig:
 
     POST_CALIBRATION_GRACE_SECONDS = 2.0 # Grace period so the model can process recorded baselines
 
+    # --- Positioning guide (silhouette) ---
+    # A body-shaped outline the examinee aligns themselves to during
+    # calibration. Its purpose is measurement consistency, not decoration:
+    # the baseline is only meaningful relative to a known seating position,
+    # and SCALE_DRIFT_TOLERANCE compares later face size against whatever
+    # size was captured here — so if someone calibrates leaning in and then
+    # sits back, they read as "drifted" for the whole session.
+    #
+    # Only the HEAD portion is machine-checkable (MediaPipe tracks the face,
+    # not the body). The shoulders are guidance for the human eye.
+    GUIDE_HEAD_CENTER    = (0.50, 0.42)   # normalized frame coords (x, y)
+    GUIDE_HEAD_TOLERANCE = 0.13           # max normalized distance from centre
+
+    # Acceptable face size, as inter-eye distance / frame width. Expressed
+    # as a fraction rather than pixels so it holds at any camera resolution.
+    GUIDE_SCALE_MIN = 0.075
+    GUIDE_SCALE_MAX = 0.160
+
+    # When True, samples taken while out of position are discarded rather
+    # than merely warned about. Safe to leave on: calibration is time-based,
+    # so it always finishes — an out-of-position examinee simply collects
+    # too few samples and gets the MIN_SAMPLES warning instead of silently
+    # producing a baseline built from a bad position.
+    ENFORCE_POSITION_GUIDE = True
+
+    # --- Orientation validation ---
+    # Guards against baking a bad pose into the baseline: someone can sit
+    # perfectly inside the guide with their head turned or tilted, and that
+    # would silently become their definition of "normal", throwing off every
+    # later measurement.
+    #
+    # Only yaw and roll are gated. Both sit near zero when facing the camera
+    # squarely (confirmed on this setup: baseline yaw -7.2, roll +3.7).
+    # Pitch is deliberately NOT gated — its resting value is dominated by
+    # camera height and the 3D model's convention (around -160 here, not 0),
+    # so an absolute pitch limit would wrongly reject people whose webcam
+    # sits low or high. Pitch is still checked for stability below.
+    ORIENTATION_YAW_TOLERANCE  = 16.0   # degrees from camera-facing
+    ORIENTATION_ROLL_TOLERANCE = 13.0
+
+    # --- Stability validation ---
+    # A baseline is the median of the calibration samples; if the examinee
+    # was moving throughout, that median represents no actual pose. Spread
+    # above this (std dev, degrees) triggers a warning to recalibrate.
+    # This same spread is what a future per-person threshold scheme would
+    # use as the examinee's own jitter measurement.
+    STABILITY_WARN_DEGREES = 7.0
+
 
 class HotkeyConfig:
     """Keyboard controls available during a monitoring session."""

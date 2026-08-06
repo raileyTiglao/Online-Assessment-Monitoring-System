@@ -312,7 +312,15 @@ class MonitoringSession:
                     head_result.scale,
                     gaze_x=head_result.gaze_x if head_result.gaze_valid else None,
                     gaze_y=head_result.gaze_y if head_result.gaze_valid else None,
+                    face_center_x=head_result.face_center_x,
+                    face_center_y=head_result.face_center_y,
+                    face_scale_ratio=head_result.face_scale_ratio,
                 )
+            else:
+                # No face at all — say so rather than leaving the last
+                # positional hint on screen, which would be misleading.
+                self.calibrator.status = "No face detected"
+                self.calibrator.status_ok = False
 
             display_frame = self.renderer.draw_calibration(frame, self.calibrator)
             cv2.imshow("Online Assessment Monitor — HAU", display_frame)
