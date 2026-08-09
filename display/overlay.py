@@ -12,7 +12,7 @@ pose readout, temporal window stats, and FPS counter.
 
 import cv2
 import numpy as np
-from config import OutputConfig, CalibrationConfig
+from config import OutputConfig, CalibrationConfig, RepetitionConfig
 from analysis.head_pose_normalizer import NormalizedPose
 from analysis.temporal import TemporalSnapshot
 from analysis.calibration import Calibrator
@@ -150,7 +150,8 @@ class OverlayRenderer:
     def draw(self, frame: np.ndarray, device_detected: bool, boxes: list,
              scores: list, labels: list, normalized_pose: NormalizedPose,
              risk_level: str, snapshot: TemporalSnapshot,
-             window_seconds: float, fps: float = None) -> np.ndarray:
+             window_seconds: float, fps: float = None,
+             repetition_count: int = None) -> np.ndarray:
         """
         Draw all overlays onto the frame and return the modified frame.
 
@@ -176,7 +177,8 @@ class OverlayRenderer:
         self._draw_device_boxes(frame, boxes, scores, labels)
         self._draw_device_status(frame, device_detected)
         self._draw_normalized_pose(frame, normalized_pose)
-        self._draw_temporal_panel(frame, snapshot, window_seconds, h, w)
+        self._draw_temporal_panel(frame, snapshot, window_seconds, h, w,
+                                  repetition_count)
 
         if fps is not None:
             self._draw_fps(frame, fps, w)
@@ -256,7 +258,8 @@ class OverlayRenderer:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 255), 2)
 
     def _draw_temporal_panel(self, frame, snapshot: TemporalSnapshot,
-                              window_seconds: float, h: int, w: int):
+                              window_seconds: float, h: int, w: int,
+                              repetition_count: int = None):
         """Bottom panel showing time-based sliding window statistics."""
         panel_y = h - 90
         cv2.rectangle(frame, (0, panel_y), (w, h), (30, 30, 30), -1)
@@ -275,6 +278,15 @@ class OverlayRenderer:
                       f"Both: {snapshot.both_ratio:.0%}")
         cv2.putText(frame, ratio_text, (10, panel_y + 48),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.52, (200, 200, 200), 1)
+
+        if repetition_count is not None:
+            rep_color = ((0, 165, 255) if repetition_count >= RepetitionConfig.MODERATE_COUNT
+                         else (150, 150, 150))
+            cv2.putText(frame,
+                        f"Episodes: {repetition_count} in "
+                        f"{RepetitionConfig.WINDOW_SECONDS:.0f}s",
+                        (w - 260, panel_y + 48),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.52, rep_color, 1)
 
         cv2.putText(frame, "Press Q/ESC to end · R to recalibrate",
                     (10, panel_y + 72),
