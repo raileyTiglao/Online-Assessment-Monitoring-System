@@ -51,7 +51,7 @@ from config import (
 from detection import ObjectDetector, HeadPoseEstimator
 from analysis import (
     Calibrator, HeadPoseNormalizer,
-    TemporalAnalyzer, RiskClassifier,
+    TemporalAnalyzer, RepetitionAnalyzer, RiskClassifier,
 )
 from monitoring import EvidenceCapture, SessionReport, FrameBuffer
 from display import OverlayRenderer
@@ -99,6 +99,7 @@ class MonitoringSession:
         self.calibrator      = Calibrator()
         self.normalizer      = None   # Created/replaced after each calibration
         self.temporal        = TemporalAnalyzer()
+        self.repetition      = RepetitionAnalyzer()
         self.classifier      = RiskClassifier()
         self.evidence        = EvidenceCapture()
         self.report          = SessionReport()
@@ -348,6 +349,7 @@ class MonitoringSession:
     def _reset_for_new_monitoring_phase(self) -> None:
         """Clear state that shouldn't carry over between calibrations."""
         self.temporal.reset()
+        self.repetition.reset()
         self.classifier.reset()
         self.frame_buffer.reset()
         self._committed_level = "LOW"
@@ -414,8 +416,17 @@ class MonitoringSession:
         )
         snapshot = self.temporal.get_snapshot()
 
+        # 4b. Repeated-movement analysis. Fed the same blended suspicion
+        # flag the window uses — so an episode is any threshold excursion on
+        # ANY signal (head turn, downward tilt, head tilt, gaze, tracking
+        # loss) — but counted as discrete episodes over a much longer span.
+        # A run of short movements, each too brief to move the ratios above,
+        # still registers as a pattern.
+        self.repetition.update(normalized_pose.suspicious)
+        repetition_count = self.repetition.episode_count
+
         # 5. Risk classification
-        risk_result = self.classifier.classify(snapshot)
+        risk_result = self.classifier.classify(snapshot, repetition_count)
 
         # 6. Evidence capture + event logging on escalation
         self._handle_risk_result(risk_result, frame, device_detected, normalized_pose)
@@ -433,6 +444,7 @@ class MonitoringSession:
             snapshot=snapshot,
             window_seconds=self.temporal.window_seconds,
             fps=fps,
+            repetition_count=repetition_count,
         )
 
         cv2.imshow("Online Assessment Monitor — HAU", frame)
@@ -517,13 +529,18 @@ class MonitoringSession:
         if level != "HIGH":
             return current_frame
 
-        # trigger_type is either "dual_modal" or "<axis>_only" — in the
-        # latter case look up the onset of that specific axis, so the
-        # captured frame shows the behavior that actually escalated.
-        require_device = (risk_result.trigger_type == "dual_modal")
-        axis = None if require_device else risk_result.trigger_type.removesuffix("_only")
-        onset_timestamp = self.temporal.get_onset_timestamp(
-            require_device=require_device, axis=axis)
+        # Repetition keeps its own, much longer window, so its onset comes
+        # from that analyzer rather than the sliding one.
+        if risk_result.trigger_type == "repetition":
+            onset_timestamp = self.repetition.get_onset_timestamp()
+        else:
+            # trigger_type is either "dual_modal" or "<axis>_only" — in the
+            # latter case look up the onset of that specific axis, so the
+            # captured frame shows the behavior that actually escalated.
+            require_device = (risk_result.trigger_type == "dual_modal")
+            axis = None if require_device else risk_result.trigger_type.removesuffix("_only")
+            onset_timestamp = self.temporal.get_onset_timestamp(
+                require_device=require_device, axis=axis)
 
         if onset_timestamp is None:
             return current_frame

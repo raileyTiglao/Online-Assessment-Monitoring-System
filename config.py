@@ -40,11 +40,30 @@ class DetectionConfig:
     DETECTION_FRAME_SKIP = 2
 
     # Resize the frame before feeding it to Faster R-CNN.
-    # Smaller input = much faster inference. Detection boxes are scaled
-    # back up to original frame size for display, so accuracy on phone-sized
-    # objects is barely affected at these resolutions.
-    # Set to None to disable resizing (use full camera resolution).
-    DETECTION_INPUT_WIDTH = 480
+    #
+    # NOTE: this does NOT speed anything up, and is left at None deliberately.
+    # Faster R-CNN applies its OWN resize internally (see DETECTION_MIN_SIZE
+    # below) and scales whatever it receives back up to that size — so
+    # pre-shrinking here is undone immediately, costing image detail on
+    # phone-sized objects while saving no time. Measured: 640px vs 256px
+    # input differed by ~4ms out of ~105ms.
+    #
+    # DETECTION_MIN_SIZE is the knob that actually controls inference cost.
+    DETECTION_INPUT_WIDTH = None
+
+    # Internal resize applied by the detector itself: the shorter image side
+    # is scaled to MIN_SIZE (capped by MAX_SIZE on the longer side) before
+    # inference. This is the real speed/accuracy dial — smaller is faster but
+    # makes distant objects like a held phone smaller in the model's view.
+    #
+    # MUST MATCH training/train_fasterrcnn.py's --min-size / --max-size.
+    # A detector learns object scale relative to its input resolution, so
+    # running a fine-tuned model at a different size than it was trained at
+    # silently costs accuracy. Torchvision defaults to 800/1333, which is
+    # what inference was previously using while training used 600/1000 —
+    # these values realign the two.
+    DETECTION_MIN_SIZE = 600
+    DETECTION_MAX_SIZE = 1000
 
     # Use mixed-precision (FP16) inference on GPU for a speed boost.
     # Has no effect on CPU.
@@ -245,7 +264,13 @@ class GazeConfig:
     #   acts only as a backstop for pronounced sideways gaze.
     #
     # Based on a small sample (4 neutral / 3 away); revisit with more data.
-    GAZE_H_THRESHOLD = 0.15    # horizontal, fraction of eye width
+    # Lowered from 0.15 after two further look-away frames measured 0.114
+    # and 0.121 — real glances sitting under the old bar. Normal scanning
+    # across the monitor peaks at 0.086, so 0.10 clears ordinary reading
+    # while catching those. Margin is thinner than the vertical axis enjoys;
+    # the sliding window's sustain requirement is what makes it workable,
+    # since normal scanning passes through 0.086 rather than resting there.
+    GAZE_H_THRESHOLD = 0.10    # horizontal, fraction of eye width
     GAZE_V_THRESHOLD = 0.035   # vertical, the discriminating axis
 
     # Master switch for whether gaze contributes to RISK CLASSIFICATION.
@@ -266,15 +291,31 @@ class TemporalConfig:
     time instead of a fixed frame count.
     """
 
-    # Tightened from 5.0s after testing showed HIGH risk escalation was too
-    # slow — by the time the flag fired, the examinee had already returned
-    # to normal behavior, causing evidence screenshots to miss the moment.
-    WINDOW_SECONDS = 3.5
+    # Widened from 3.5s. The earlier value was tightened because a slow
+    # escalation meant the examinee had already returned to normal by the
+    # time HIGH fired — but that problem was actually solved by onset-based
+    # evidence capture (the FrameBuffer retrieves the frame from when the
+    # behaviour BEGAN), not by reacting faster.
+    #
+    # A ratio can never exceed 1.0, so the window is a hard ceiling on how
+    # long a behaviour can be required to persist: at 3.5s, HIGH could not
+    # demand more than 3.5s of evidence no matter how the ratios were set.
+    # Widening it is the only way to reach thresholds that survive ordinary
+    # exam behaviour — glancing at a keyboard, re-reading a question,
+    # thinking with your head down — which routinely occupy 2-3 seconds.
+    #
+    # Raising this no longer creates a blind spot for brief behaviour:
+    # RepetitionConfig now catches short movements that repeat, so the two
+    # paths cover different patterns rather than competing for one setting.
+    WINDOW_SECONDS = 6.0
 
-    MODERATE_TRIGGER_RATIO = 0.35     # 30% of window = ~1.05 seconds of a single signal
+    MODERATE_TRIGGER_RATIO = 0.35     # 35% of window = ~2.1s of a single signal
 
-    HIGH_TRIGGER_RATIO     = 0.50    # 40% of window = ~1.4 seconds of both signals
-                                      # co-occurring. Lowered further for responsiveness.
+    HIGH_TRIGGER_RATIO     = 0.50    # 50% of window = ~3.0s of both signals
+                                      # co-occurring. Kept lowest of the HIGH
+                                      # paths — two independent signals
+                                      # agreeing is the strongest evidence
+                                      # available, so it needs the least time.
 
     # --- Immediate HIGH on device detection ---
     # A mobile device visible during an exam is unambiguous in a way head
@@ -308,13 +349,17 @@ class TemporalConfig:
     # Pitch is therefore the most sensitive (quiet, reliable signal) and yaw
     # /roll are stricter (noisy signals that need more sustained evidence
     # before they mean anything).
-    PITCH_HIGH_RATIO       = 0.60    # ~2.1s of sustained downward tilt
-    YAW_HIGH_RATIO         = 0.75    # ~2.6s — stricter, yaw is the noisy axis
-    ROLL_HIGH_RATIO        = 0.75    # ~2.6s — same reasoning as yaw
+    # Times below assume WINDOW_SECONDS = 6.0. They are set so that ordinary
+    # exam behaviour clears them comfortably: glancing at a keyboard or
+    # re-reading a question occupies roughly 1-3 seconds, so a HIGH flag
+    # requires roughly double that before it will fire.
+    PITCH_HIGH_RATIO       = 0.67    # ~4.0s of sustained downward tilt
+    YAW_HIGH_RATIO         = 0.80    # ~4.8s — stricter, yaw is the noisy axis
+    ROLL_HIGH_RATIO        = 0.80    # ~4.8s — same reasoning as yaw
 
-    PITCH_MODERATE_RATIO   = 0.35
-    YAW_MODERATE_RATIO     = 0.50
-    ROLL_MODERATE_RATIO    = 0.50
+    PITCH_MODERATE_RATIO   = 0.35    # ~2.1s
+    YAW_MODERATE_RATIO     = 0.50    # ~3.0s
+    ROLL_MODERATE_RATIO    = 0.50    # ~3.0s
 
     # --- Lost-face-tracking (dropout) thresholds ---
     # Dropout is tracked as its own signal rather than being folded into the
@@ -322,16 +367,16 @@ class TemporalConfig:
     # is weak, ambiguous evidence on its own (the system cannot tell a
     # phone-in-lap glance from someone leaning back to stretch), so it needs
     # to persist far longer than a real pose deviation before it escalates.
-    DROPOUT_HIGH_RATIO     = 0.85    # ~3.0s of near-continuous lost tracking
-    DROPOUT_MODERATE_RATIO = 0.65
+    DROPOUT_HIGH_RATIO     = 0.85    # ~5.1s of near-continuous lost tracking
+    DROPOUT_MODERATE_RATIO = 0.65    # ~3.9s
 
     # --- Gaze (iris) thresholds ---
     # Deliberately strict to start with: gaze is the newest and least-tuned
     # signal, and eyes flick around constantly during normal reading, so it
     # needs to be sustained well before it means anything. Only applies when
     # GazeConfig.ENABLE_GAZE_FLAGGING is True.
-    GAZE_HIGH_RATIO        = 0.70
-    GAZE_MODERATE_RATIO    = 0.50
+    GAZE_HIGH_RATIO        = 0.70    # ~4.2s
+    GAZE_MODERATE_RATIO    = 0.45    # ~2.7s
 
     # Buffer margin added on top of WINDOW_SECONDS when sizing the FrameBuffer
     # (monitoring/frame_buffer.py), so evidence capture can always look back
@@ -349,6 +394,55 @@ class TemporalConfig:
     # ratio threshold — so the session report reflects real incidents
     # instead of noise.
     LEVEL_LOG_HOLD_SECONDS = 0.75
+
+
+class RepetitionConfig:
+    """
+    Repeated-glance detection.
+
+    The sliding window in TemporalConfig answers "is this behaviour being
+    SUSTAINED?" — which misses the opposite pattern: many short glances.
+    Someone checking a phone five times in fifteen seconds may never hold
+    any single glance long enough to move those ratios, yet the repetition
+    itself is the tell. Normal behaviour drifts; furtive behaviour repeats.
+
+    This tracks discrete EPISODES (a move away from normal, then back)
+    across a much longer window than the ratio analyser uses, and escalates
+    on the count rather than on duration.
+
+    An episode must be held briefly before it counts, and normal posture
+    must be recovered briefly before the next one can start. Without those
+    two guards, landmark jitter around a threshold would manufacture
+    dozens of fake episodes per second.
+    """
+
+    # How far back to look when counting episodes. Much longer than
+    # TemporalConfig.WINDOW_SECONDS — repetition is only meaningful over a
+    # span that can actually contain several separate glances.
+    WINDOW_SECONDS = 20.0
+
+    # Suspicion must persist this long before it is treated as a real
+    # episode rather than a flicker. Raised alongside the wider temporal
+    # window: a genuine glance away and back takes most of a second, so
+    # anything shorter is far more likely to be threshold noise than a
+    # deliberate look.
+    MIN_EPISODE_SECONDS = 0.60
+
+    # Normal posture must be held this long before the next episode can
+    # begin, so one wavering glance isn't counted as several.
+    MIN_GAP_SECONDS = 0.50
+
+    # Episode counts within WINDOW_SECONDS that escalate risk.
+    #
+    # These carry more of the load now that the sustained thresholds are
+    # longer: a run of short glances that individually never reach 4 seconds
+    # is exactly the pattern the duration path is designed NOT to catch, so
+    # this is the rule that sees it.
+    MODERATE_COUNT = 3
+    HIGH_COUNT     = 4
+
+    # Set False to disable repeated-glance detection entirely.
+    ENABLED = True
 
 
 class CameraConfig:

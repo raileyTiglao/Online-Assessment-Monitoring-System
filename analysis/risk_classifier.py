@@ -26,7 +26,7 @@ retrieving a representative frame from the frame buffer.
 """
 
 from dataclasses import dataclass
-from config import TemporalConfig
+from config import TemporalConfig, RepetitionConfig
 from analysis.temporal import TemporalSnapshot
 
 
@@ -99,7 +99,8 @@ class RiskClassifier:
     # Public API
     # ------------------------------------------------------------------
 
-    def classify(self, snapshot: TemporalSnapshot) -> RiskResult:
+    def classify(self, snapshot: TemporalSnapshot,
+                 repetition_count: int = 0) -> RiskResult:
         """
         Classify risk level based on the aggregated temporal snapshot.
 
@@ -107,18 +108,29 @@ class RiskClassifier:
             HIGH (dual-modal):    both_ratio >= HIGH_TRIGGER_RATIO
             HIGH (per-axis):      pitch/yaw/roll/dropout ratio >= that
                                    axis's own HIGH threshold
-            MODERATE:             device_ratio >= MODERATE_TRIGGER_RATIO, or
-                                   any axis >= its own MODERATE threshold
+            HIGH (repetition):    repetition_count >= HIGH_COUNT
+            MODERATE:             device_ratio >= MODERATE_TRIGGER_RATIO,
+                                   any axis >= its own MODERATE threshold, or
+                                   repetition_count >= MODERATE_COUNT
             LOW:                  otherwise
 
         Args:
-            snapshot: Current TemporalSnapshot from the TemporalAnalyzer
+            snapshot:         Current TemporalSnapshot from the TemporalAnalyzer
+            repetition_count: Separate suspicious-movement episodes counted
+                              by RepetitionAnalyzer over its own, much longer
+                              window. An episode is any excursion past a
+                              threshold on ANY signal — head turn, downward
+                              tilt, head tilt, gaze, or tracking loss — and
+                              back. Catches repeated brief movements, which
+                              the ratio thresholds are structurally unable to
+                              see, since each ends before it can accumulate.
 
         Returns:
             RiskResult with level, escalation flag, trigger description,
             and trigger_type for downstream evidence lookup
         """
-        level, trigger, trigger_type = self._determine_level(snapshot)
+        level, trigger, trigger_type = self._determine_level(
+            snapshot, repetition_count)
         escalated = self._LEVEL_ORDER[level] > self._LEVEL_ORDER[self._last_level]
         self._last_level = level
 
@@ -138,7 +150,8 @@ class RiskClassifier:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _determine_level(self, snapshot: TemporalSnapshot) -> tuple:
+    def _determine_level(self, snapshot: TemporalSnapshot,
+                         repetition_count: int = 0) -> tuple:
         """
         Pure decision logic returning (level, trigger_description, trigger_type).
         Isolated for easy unit testing.
@@ -176,6 +189,17 @@ class RiskClassifier:
                            f"(threshold {high_threshold:.0%})")
                 return "HIGH", trigger, f"{stem}_only"
 
+        # --- HIGH: repeated suspicious-movement episodes ---
+        # Checked after the sustained rules because a long single glance is
+        # the stronger signal, but before any MODERATE: several separate
+        # glances is a deliberate pattern, not the drift that MODERATE
+        # exists to describe.
+        if RepetitionConfig.ENABLED and repetition_count >= RepetitionConfig.HIGH_COUNT:
+            trigger = (f"Repeated suspicious movement: {repetition_count} separate "
+                       f"episodes in {RepetitionConfig.WINDOW_SECONDS:.0f}s "
+                       f"(threshold {RepetitionConfig.HIGH_COUNT})")
+            return "HIGH", trigger, "repetition"
+
         # --- MODERATE: device alone ---
         if snapshot.device_ratio >= self._moderate_ratio:
             trigger = (f"Device detected {snapshot.device_ratio:.0%} of window")
@@ -189,5 +213,12 @@ class RiskClassifier:
                 trigger = (f"{label}: active {ratio:.0%} of window "
                            f"(threshold {moderate_threshold:.0%})")
                 return "MODERATE", trigger, f"{stem}_moderate"
+
+        # --- MODERATE: repeated movement, below the HIGH count ---
+        if RepetitionConfig.ENABLED and repetition_count >= RepetitionConfig.MODERATE_COUNT:
+            trigger = (f"Repeated suspicious movement: {repetition_count} separate "
+                       f"episodes in {RepetitionConfig.WINDOW_SECONDS:.0f}s "
+                       f"(threshold {RepetitionConfig.MODERATE_COUNT})")
+            return "MODERATE", trigger, "repetition_moderate"
 
         return "LOW", "No sustained suspicious signals", "none"

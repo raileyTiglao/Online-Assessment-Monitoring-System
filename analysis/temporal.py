@@ -165,17 +165,39 @@ class TemporalAnalyzer:
         if total_duration <= 0:
             return TemporalSnapshot(0.0, 0.0, 0.0, 0.0, len(entries))
 
+        # Divide by the CONFIGURED window, not the span actually buffered.
+        #
+        # Dividing by the buffered span made a ratio mean "fraction of
+        # however much history happens to exist", so the same behaviour
+        # crossed a threshold much sooner when the window was still filling:
+        # 2.5s of downward tilt inside 3.5s of history reads as 71%, clearing
+        # a 67% bar that is supposed to represent 4 seconds. Sessions were
+        # therefore most trigger-happy in the moments right after start-up
+        # and after every recalibration — exactly when an examinee is still
+        # settling.
+        #
+        # Against the configured window the same 2.5s reads as 42%, so a
+        # threshold expressed as a fraction now corresponds to a fixed number
+        # of seconds regardless of how long the session has been running.
+        # max() guards the case where pruning briefly leaves slightly more
+        # than a full window buffered, which would otherwise allow a ratio
+        # above 1.0.
+        denominator = max(total_duration, self.window_seconds)
+
         return TemporalSnapshot(
-            device_ratio=device_duration / total_duration,
-            head_ratio=head_duration / total_duration,
-            both_ratio=both_duration / total_duration,
+            device_ratio=device_duration / denominator,
+            head_ratio=head_duration / denominator,
+            both_ratio=both_duration / denominator,
+            # Reported as the span actually held, which is what the overlay
+            # shows as "Window: x.xs / Ns" — a fill indicator, not the
+            # denominator used above.
             window_seconds=total_duration,
             sample_count=len(entries),
-            yaw_ratio=yaw_duration / total_duration,
-            pitch_ratio=pitch_duration / total_duration,
-            roll_ratio=roll_duration / total_duration,
-            dropout_ratio=dropout_duration / total_duration,
-            gaze_ratio=gaze_duration / total_duration,
+            yaw_ratio=yaw_duration / denominator,
+            pitch_ratio=pitch_duration / denominator,
+            roll_ratio=roll_duration / denominator,
+            dropout_ratio=dropout_duration / denominator,
+            gaze_ratio=gaze_duration / denominator,
         )
 
     def reset(self) -> None:
