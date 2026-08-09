@@ -213,8 +213,13 @@ class TemporalAnalyzer:
             in the current window (shouldn't normally happen if the
             corresponding risk level has already been triggered).
         """
+        # "device"/"device_immediate" map to the device flag rather than a
+        # pose axis, so a device-triggered HIGH captures the frame where the
+        # device first appeared instead of the first frame of any unrelated
+        # head movement that happened to be earlier in the window.
         axis_index = {"yaw": 2, "pitch": 3, "roll": 4,
-                      "dropout": 5, "gaze": 6}.get(axis)
+                      "dropout": 5, "gaze": 6,
+                      "device": 1, "device_immediate": 1}.get(axis)
 
         for entry in self._entries:
             timestamp, device = entry[0], entry[1]

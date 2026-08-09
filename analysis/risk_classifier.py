@@ -149,6 +149,18 @@ class RiskClassifier:
         any MODERATE condition, so a quiet-but-decisive signal is never
         masked by a noisier one sitting at a lower level.
         """
+        # --- HIGH: device present at all (no sustain requirement) ---
+        # Checked first, and on ">0" rather than a ratio, because unlike a
+        # head pose a visible device needs no corroboration to be meaningful.
+        # device_ratio stays above zero for the remainder of the sliding
+        # window after the device leaves frame, so a device glimpsed briefly
+        # still holds HIGH long enough to be logged and screenshotted rather
+        # than flickering away before the debounce in main.py commits it.
+        if TemporalConfig.DEVICE_IMMEDIATE_HIGH and snapshot.device_ratio > 0:
+            trigger = (f"Mobile device detected in frame "
+                       f"({snapshot.device_ratio:.0%} of window)")
+            return "HIGH", trigger, "device_immediate"
+
         # --- HIGH: dual-modal (device + head pose co-occurring) ---
         if snapshot.both_ratio >= self._high_ratio:
             trigger = (f"Dual-modal: device + suspicious head pose "

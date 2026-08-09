@@ -276,6 +276,26 @@ class TemporalConfig:
     HIGH_TRIGGER_RATIO     = 0.50    # 40% of window = ~1.4 seconds of both signals
                                       # co-occurring. Lowered further for responsiveness.
 
+    # --- Immediate HIGH on device detection ---
+    # A mobile device visible during an exam is unambiguous in a way head
+    # pose never is: looking down could be notes, a keyboard, or thinking,
+    # but a phone in frame has no innocent reading. So it does not need the
+    # sliding window's "was this sustained?" test — the window exists to
+    # separate real behaviour from momentary noise, and a device detection
+    # is not noise.
+    #
+    # Set False to fall back to the previous behaviour, where a device alone
+    # only reached MODERATE (via MODERATE_TRIGGER_RATIO) and HIGH required
+    # it to co-occur with suspicious head pose.
+    #
+    # NOTE: this makes risk directly dependent on detector precision. It is
+    # safe with the current COCO weights, which produced zero false
+    # positives on this project's test frames. It would NOT be safe with
+    # the fine-tuned checkpoints in models/ — those fire 3-4 detections at
+    # 0.9+ confidence on a person with no phone present, which would pin
+    # every session at HIGH. See logs.md.
+    DEVICE_IMMEDIATE_HIGH = True
+
     # --- Per-axis sustained-behavior thresholds ---
     # Each pose axis is tracked on its own sliding-window ratio rather than
     # being collapsed into one blended "head suspicious" signal, because the
