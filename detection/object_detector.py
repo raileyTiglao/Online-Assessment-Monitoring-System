@@ -48,6 +48,10 @@ class ObjectDetector:
         self._use_amp = DetectionConfig.USE_AMP and self.device.type == "cuda"
         if self._use_amp:
             print("[ObjectDetector] Mixed-precision (FP16) inference enabled.")
+        print(f"[ObjectDetector] Inference resize: min_size="
+              f"{DetectionConfig.DETECTION_MIN_SIZE}, "
+              f"max_size={DetectionConfig.DETECTION_MAX_SIZE} "
+              f"(must match training).")
         print("[ObjectDetector] Ready.")
 
     # ------------------------------------------------------------------
@@ -80,7 +84,11 @@ class ObjectDetector:
         """Load Faster R-CNN with default COCO pre-trained weights."""
         print("[ObjectDetector] Loading COCO pre-trained Faster R-CNN...")
         weights = FasterRCNN_ResNet50_FPN_Weights.DEFAULT
-        model   = fasterrcnn_resnet50_fpn(weights=weights)
+        model   = fasterrcnn_resnet50_fpn(
+            weights=weights,
+            min_size=DetectionConfig.DETECTION_MIN_SIZE,
+            max_size=DetectionConfig.DETECTION_MAX_SIZE,
+        )
         model.to(self.device)
         model.eval()
 
@@ -101,7 +109,13 @@ class ObjectDetector:
         COCO-specific TARGET_CLASS_IDS.
         """
         print(f"[ObjectDetector] Loading fine-tuned Faster R-CNN from {model_path}...")
-        model = fasterrcnn_resnet50_fpn(weights=None)
+        # min_size/max_size must match what this checkpoint was TRAINED at,
+        # or the model sees objects at a different scale than it learned.
+        model = fasterrcnn_resnet50_fpn(
+            weights=None,
+            min_size=DetectionConfig.DETECTION_MIN_SIZE,
+            max_size=DetectionConfig.DETECTION_MAX_SIZE,
+        )
         in_features = model.roi_heads.box_predictor.cls_score.in_features
         model.roi_heads.box_predictor = FastRCNNPredictor(
             in_features, DetectionConfig.CUSTOM_NUM_CLASSES
