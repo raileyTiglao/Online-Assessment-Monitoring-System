@@ -17,6 +17,7 @@ Usage (main project venv):
 """
 
 import argparse
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -24,6 +25,13 @@ import torch
 from torch.utils.data import DataLoader
 from torchvision.models.detection import fasterrcnn_resnet50_fpn
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
+
+# Evaluation reuses the training script's dataset reader so both read the
+# VOC annotations identically — an evaluation that parsed labels even
+# slightly differently from training would report misleading numbers.
+# Python only puts THIS file's directory on the import path, so training/
+# has to be added explicitly now that the two live in separate folders.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "training"))
 
 from train_fasterrcnn import VOCMobileDeviceDataset, collate_fn, NUM_CLASSES
 
