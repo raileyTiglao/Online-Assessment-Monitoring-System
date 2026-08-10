@@ -5,14 +5,25 @@ Online Assessment Monitoring System
 Holy Angel University — School of Computing
 
 Converts an aggregated TemporalSnapshot into one of three risk levels,
-matching the study's three-tier framework:
+matching the study's three-tier framework (paper, p.9):
 
   LOW      — No sustained suspicious signals
   MODERATE — Either device OR head pose sustained alone (ambiguous)
-  HIGH     — Two possible triggers:
-               1. Both signals co-occur persistently (dual-modal, strongest)
-               2. Head pose alone sustained beyond the stricter solo threshold
-                  (captures prolonged downward gaze without a visible device)
+  HIGH     — Two conditions:
+               1. Both signals co-occur persistently (dual-modal, per paper)
+               2. Repeated suspicious-movement episodes (persistence across
+                  discontinuous episodes rather than one continuous window
+                  — not in the paper's text, but the same "persistent"
+                  principle applied to a pattern the paper's continuous-
+                  window test structurally can't see; see docs/logs.md
+                  2026-08-10)
+
+Single-axis head pose (pitch/yaw/roll/dropout/gaze) sustained alone, and a
+device detected alone, now cap at MODERATE — matching the paper. Demoted
+2026-08-10; previously each could reach HIGH independently. See
+docs/logs.md for the reasoning (single-axis noise measured to exceed
+deliberate-glance signal; device-alone HIGH tied risk severity to detector
+precision with no corroboration).
 
 Classification is based on TIME-WEIGHTED RATIOS (fraction of the recent
 window during which a signal was active) rather than raw frame counts,
@@ -59,9 +70,8 @@ class RiskClassifier:
 
     HIGH risk has two independent trigger paths:
       - Dual-modal:      both device AND head pose co-occur >= HIGH_TRIGGER_RATIO
-      - Per-axis:        any single axis (pitch/yaw/roll/dropout) sustained
-                         past its OWN threshold — captures e.g. prolonged
-                         downward gaze with no visible device
+      - Repetition:      repeated suspicious-movement episodes (see module
+                         docstring)
 
     Usage:
         classifier = RiskClassifier()
@@ -72,21 +82,23 @@ class RiskClassifier:
     # Risk levels ordered lowest to highest, used to detect escalation
     _LEVEL_ORDER = {"LOW": 0, "MODERATE": 1, "HIGH": 2}
 
-    # Per-axis rules, checked in order. Each entry is:
-    #   (snapshot attribute, HIGH ratio, MODERATE ratio,
-    #    human-readable label, trigger_type stem)
-    # Ordered most- to least-specific so the reported trigger names the
-    # behavior that actually drove the escalation.
+    # Per-axis MODERATE rules, checked in order. Each entry is:
+    #   (snapshot attribute, MODERATE ratio, human-readable label,
+    #    trigger_type stem)
+    # Axes no longer have an independent HIGH threshold — demoted 2026-08-10
+    # to match the paper (a single axis alone now caps at MODERATE; HIGH
+    # requires dual-modal or repetition). The corresponding *_HIGH_RATIO
+    # config values still exist but are unused by this classifier.
     _AXIS_RULES = (
-        ("pitch_ratio",   "PITCH_HIGH_RATIO",   "PITCH_MODERATE_RATIO",
+        ("pitch_ratio",   "PITCH_MODERATE_RATIO",
          "Sustained downward tilt",   "pitch"),
-        ("yaw_ratio",     "YAW_HIGH_RATIO",     "YAW_MODERATE_RATIO",
+        ("yaw_ratio",     "YAW_MODERATE_RATIO",
          "Sustained sideways turn",   "yaw"),
-        ("roll_ratio",    "ROLL_HIGH_RATIO",    "ROLL_MODERATE_RATIO",
+        ("roll_ratio",    "ROLL_MODERATE_RATIO",
          "Sustained head tilt",       "roll"),
-        ("dropout_ratio", "DROPOUT_HIGH_RATIO", "DROPOUT_MODERATE_RATIO",
+        ("dropout_ratio", "DROPOUT_MODERATE_RATIO",
          "Face tracking lost while turned away", "dropout"),
-        ("gaze_ratio",    "GAZE_HIGH_RATIO",    "GAZE_MODERATE_RATIO",
+        ("gaze_ratio",    "GAZE_MODERATE_RATIO",
          "Eyes directed away from screen", "gaze"),
     )
 
@@ -106,13 +118,14 @@ class RiskClassifier:
 
         Rules (checked in order of severity):
             HIGH (dual-modal):    both_ratio >= HIGH_TRIGGER_RATIO
-            HIGH (per-axis):      pitch/yaw/roll/dropout ratio >= that
-                                   axis's own HIGH threshold
             HIGH (repetition):    repetition_count >= HIGH_COUNT
             MODERATE:             device_ratio >= MODERATE_TRIGGER_RATIO,
                                    any axis >= its own MODERATE threshold, or
                                    repetition_count >= MODERATE_COUNT
             LOW:                  otherwise
+
+        Single-axis head pose and device-alone no longer reach HIGH — see
+        module docstring, "Demoted 2026-08-10".
 
         Args:
             snapshot:         Current TemporalSnapshot from the TemporalAnalyzer
@@ -180,20 +193,12 @@ class RiskClassifier:
                        f"co-occurred {snapshot.both_ratio:.0%} of window")
             return "HIGH", trigger, "dual_modal"
 
-        # --- HIGH: any single axis sustained past its own threshold ---
-        for attr, high_name, _, label, stem in self._AXIS_RULES:
-            ratio = getattr(snapshot, attr)
-            high_threshold = getattr(TemporalConfig, high_name)
-            if ratio >= high_threshold:
-                trigger = (f"{label}: active {ratio:.0%} of window "
-                           f"(threshold {high_threshold:.0%})")
-                return "HIGH", trigger, f"{stem}_only"
-
         # --- HIGH: repeated suspicious-movement episodes ---
-        # Checked after the sustained rules because a long single glance is
-        # the stronger signal, but before any MODERATE: several separate
-        # glances is a deliberate pattern, not the drift that MODERATE
-        # exists to describe.
+        # Single-axis sustained-alone no longer reaches HIGH (demoted
+        # 2026-08-10 to match the paper — see module docstring); repetition
+        # is the only non-dual-modal path left, checked here so several
+        # separate glances (a deliberate pattern) still outranks the
+        # single-signal MODERATE checks below.
         if RepetitionConfig.ENABLED and repetition_count >= RepetitionConfig.HIGH_COUNT:
             trigger = (f"Repeated suspicious movement: {repetition_count} separate "
                        f"episodes in {RepetitionConfig.WINDOW_SECONDS:.0f}s "
@@ -206,7 +211,7 @@ class RiskClassifier:
             return "MODERATE", trigger, "device_only"
 
         # --- MODERATE: any single axis past its own moderate threshold ---
-        for attr, _, moderate_name, label, stem in self._AXIS_RULES:
+        for attr, moderate_name, label, stem in self._AXIS_RULES:
             ratio = getattr(snapshot, attr)
             moderate_threshold = getattr(TemporalConfig, moderate_name)
             if ratio >= moderate_threshold:
