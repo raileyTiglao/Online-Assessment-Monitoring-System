@@ -241,9 +241,11 @@ been asked to validate if the questionnaire wording is as quoted.
 
 ## 6. Recommended priority order
 
-1. **§2.1 and §2.2 first** — these are what a live demo disproves in
-   seconds. Decide per-item whether the paper or the code should move,
-   independently for each (they don't have to resolve the same way).
+1. **§2.1 and §2.2 — RESOLVED 2026-08-10 (code side).** Classifier now
+   matches the paper's dual-modal HIGH definition, plus `repetition` kept
+   as a deliberate third condition. Still open: p.9's text itself needs a
+   line added describing `repetition`, since it's not in the original
+   wording — a paper-only edit, no further code change needed.
 2. **§3.1** — resolve before anything downstream (Methods, Data
    Collection, Ethics) gets cited or expanded further; five sections are
    currently inconsistent with the revised objective.

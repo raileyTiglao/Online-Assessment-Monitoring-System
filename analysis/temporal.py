@@ -90,7 +90,8 @@ class TemporalAnalyzer:
     def update(self, device_detected: bool, yaw_suspicious: bool = False,
                pitch_suspicious: bool = False, roll_suspicious: bool = False,
                dropout_suspicious: bool = False,
-               gaze_suspicious: bool = False) -> None:
+               gaze_suspicious: bool = False,
+               timestamp: float = None) -> None:
         """
         Record the current frame's signals with a timestamp, then prune
         any entries that have fallen outside the configured time window.
@@ -98,8 +99,14 @@ class TemporalAnalyzer:
         Each pose axis is stored separately so it can be aggregated against
         its own threshold; the blended "any axis" signal is derived at
         snapshot time rather than stored.
+
+        timestamp: defaults to time.time() (live use). Pass the ORIGINAL
+        recorded timestamp when replaying a research log offline — see
+        evaluation/threshold_sensitivity.py — so the window's real-world
+        pacing is reconstructed instead of collapsing to however fast the
+        replay loop itself runs.
         """
-        now = time.time()
+        now = timestamp if timestamp is not None else time.time()
         self._entries.append((now, device_detected, yaw_suspicious,
                               pitch_suspicious, roll_suspicious,
                               dropout_suspicious, gaze_suspicious))

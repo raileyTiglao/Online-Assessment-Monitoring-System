@@ -26,9 +26,11 @@ trained_model/
 # Session outputs (generated at runtime, not source code)
 session_report.json
 evidence_captures/
+research_logs/
 
 # Local development log — working notebook, not project documentation
 logs.md
+docs/OBJECT_DETECTION_NEXT_STEPS.md
 
 # Annotated videos written by test_on_video.py --out
 *.mp4

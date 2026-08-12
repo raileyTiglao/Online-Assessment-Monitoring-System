@@ -46,14 +46,14 @@ import time
 from config import (
     CameraConfig, OutputConfig, DetectionConfig,
     CalibrationConfig, HotkeyConfig, TemporalConfig,
-    DatabaseConfig,
+    DatabaseConfig, ResearchLoggingConfig,
 )
 from detection import ObjectDetector, HeadPoseEstimator
 from analysis import (
     Calibrator, HeadPoseNormalizer,
     TemporalAnalyzer, RepetitionAnalyzer, RiskClassifier,
 )
-from monitoring import EvidenceCapture, SessionReport, FrameBuffer
+from monitoring import EvidenceCapture, SessionReport, FrameBuffer, ResearchLogger
 from display import OverlayRenderer
 from connection import (
     FirebaseClient, FirestoreSessionRepository, ExamRepository,
@@ -104,6 +104,11 @@ class MonitoringSession:
         self.evidence        = EvidenceCapture()
         self.report          = SessionReport()
         self.renderer        = OverlayRenderer()
+
+        # Off unless ResearchLoggingConfig.ENABLED = True — see that config
+        # for why this is separate from SessionReport (which only logs
+        # flagged events, not every frame).
+        self.research_logger = ResearchLogger(self.report.session_uid)
 
         # Frame buffer sized to the temporal window + a safety margin, so
         # the onset frame (up to WINDOW_SECONDS in the past) is always
@@ -386,6 +391,10 @@ class MonitoringSession:
             if key == HotkeyConfig.RECALIBRATE_KEY:
                 print("\n[MonitoringSession] Recalibration requested by user.")
                 return "recalibrate"
+            # Scenario-marker digit keys (0-9) — no-op unless
+            # ResearchLoggingConfig.ENABLED, so this never interferes with
+            # a normal exam session.
+            self.research_logger.mark_scenario(key)
 
     def _process_frame(self, frame) -> None:
         """Run one full pipeline pass on a single frame and display it."""
@@ -430,6 +439,12 @@ class MonitoringSession:
 
         # 6. Evidence capture + event logging on escalation
         self._handle_risk_result(risk_result, frame, device_detected, normalized_pose)
+
+        # 6b. Continuous per-frame research log (no-op unless
+        # ResearchLoggingConfig.ENABLED) — every frame, not just flagged
+        # ones, for Chapter 3 pose-distribution and accuracy analysis.
+        self.research_logger.log_frame(normalized_pose, snapshot, risk_result,
+                                        repetition_count, device_detected)
 
         # 7. Render overlays and display
         fps = self._calculate_fps()
@@ -567,6 +582,7 @@ class MonitoringSession:
             self.capture.release()
         cv2.destroyAllWindows()
         self.pose_estimator.close()
+        self.research_logger.close()
 
 
 # =============================================================================
