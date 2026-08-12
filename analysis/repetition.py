@@ -65,12 +65,18 @@ class RepetitionAnalyzer:
     # Public API
     # ------------------------------------------------------------------
 
-    def update(self, suspicious: bool) -> None:
+    def update(self, suspicious: bool, timestamp: float = None) -> None:
         """
         Feed one frame's suspicion flag and advance the episode state
         machine. Safe to call every frame; cost is O(1) amortised.
+
+        timestamp: defaults to time.time() (live use). Pass the ORIGINAL
+        recorded timestamp when replaying a research log offline (see
+        evaluation/threshold_sensitivity.py), and pass the SAME value to
+        episode_count()/get_onset_timestamp() calls for that frame — see
+        those methods' `at` parameter.
         """
-        now = time.time()
+        now = timestamp if timestamp is not None else time.time()
 
         if self._raw_since is None:
             self._raw_state = suspicious
@@ -97,11 +103,19 @@ class RepetitionAnalyzer:
 
         self._prune(now)
 
+    def episode_count_at(self, timestamp: float = None) -> int:
+        """
+        Number of episodes that began within the current window, as of
+        `timestamp` (defaults to time.time() for live use; pass the
+        recorded frame timestamp when replaying offline).
+        """
+        self._prune(timestamp if timestamp is not None else time.time())
+        return len(self._episodes)
+
     @property
     def episode_count(self) -> int:
         """Number of episodes that began within the current window."""
-        self._prune(time.time())
-        return len(self._episodes)
+        return self.episode_count_at()
 
     def get_onset_timestamp(self) -> float | None:
         """

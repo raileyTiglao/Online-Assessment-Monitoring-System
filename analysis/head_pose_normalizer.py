@@ -223,13 +223,18 @@ class HeadPoseNormalizer:
             gaze_suspicious=gaze_susp,
         )
 
-    def _analyse_gaze(self, gaze_x: float, gaze_y: float) -> tuple:
+    @staticmethod
+    def _analyse_gaze(gaze_x: float, gaze_y: float) -> tuple:
         """
         Check baseline-relative gaze against the configured thresholds.
 
         Horizontal and vertical are checked independently because the eye's
         usable vertical range is considerably smaller than its horizontal
         one — the eyelids clip it — so they warrant different sensitivities.
+
+        Static for the same reason as _analyse() above — lets
+        evaluation/threshold_sensitivity.py reuse this exact decision logic
+        offline against varied GazeConfig thresholds.
 
         Returns (suspicious, reason). Always returns False when
         GazeConfig.ENABLE_GAZE_FLAGGING is off, so the signal can be
@@ -313,12 +318,18 @@ class HeadPoseNormalizer:
             return 1.0
         return current_scale / self._baseline.scale
 
-    def _analyse(self, yaw: float, pitch: float, roll: float) -> tuple:
+    @staticmethod
+    def _analyse(yaw: float, pitch: float, roll: float) -> tuple:
         """
         Compare baseline-relative angles against the configured thresholds.
         Only called when NOT drifted — i.e. the examinee is at approximately
         the same distance from the camera as during calibration, so the
         baseline is still valid.
+
+        Static (reads only module-level config, no instance state) so
+        evaluation/threshold_sensitivity.py can call the EXACT same
+        decision logic offline against varied HeadPoseConfig thresholds,
+        instead of re-implementing the comparison and risking drift.
 
         Returns:
             (yaw_suspicious, pitch_suspicious, roll_suspicious, reason)

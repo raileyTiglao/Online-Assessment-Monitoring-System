@@ -152,6 +152,44 @@ class HotkeyConfig:
     RECALIBRATE_KEY = ord('r')     # 'r' redoes the calibration phase mid-session
 
 
+class ResearchLoggingConfig:
+    """
+    Continuous per-frame data logging for Chapter 3 data collection.
+
+    session_report.json / logs.md only ever record FLAGGED events
+    (MODERATE/HIGH) — correct for exam-time evidence, useless for
+    describing pose distributions or scoring threshold accuracy, both of
+    which need EVERY frame, not just the ones that crossed a threshold.
+
+    Off by default — this is a dedicated data-collection mode, not
+    something that should run during a real exam session (extra disk I/O
+    every frame, and the scenario-marker hotkeys below overlap with digits
+    that mean nothing during normal use, so leaving it off avoids any
+    accidental interaction).
+    """
+    ENABLED = True
+
+    LOG_DIR = "research_logs"
+
+    # Digit keys 0-9 during a monitoring session mark which scripted
+    # scenario is currently being performed, so the CSV can be sliced by
+    # scenario afterward. Index 0 ('0' key) MUST be the neutral/baseline
+    # label — ResearchLogger starts every session in it. Edit this list to
+    # match whatever scenarios a given data-collection session is
+    # scripting; unused slots are simply never pressed.
+    SCENARIO_LABELS = [
+        "normal",               # key 0 — baseline / no scripted behavior
+        "sustained_downward",   # key 1
+        "sustained_sideways",   # key 2
+        "sustained_tilt",       # key 3
+        "device_visible",       # key 4
+        "device_and_pose",      # key 5
+        "repeated_glances",     # key 6
+        "tracking_dropout",     # key 7
+        "gaze_offscreen",       # key 8
+    ]
+
+
 class HeadPoseConfig:
     """Settings for MediaPipe Face Mesh + head pose estimation."""
 
