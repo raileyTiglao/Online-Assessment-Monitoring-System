@@ -18,11 +18,19 @@ Orchestrates all components into a single real-time monitoring session:
 
 SESSION FLOW:
     1. Open webcam
-    2. CALIBRATION PHASE (~7 seconds) — examinee sits naturally, system
-       samples raw yaw/pitch/roll/scale and averages them into a baseline.
-    3. MONITORING PHASE — behavioral decisions are made against the
+    2. READY SCREEN — examinee gets into position and settles in, then
+       presses SPACE when ready. Calibration's baseline timer does not
+       start automatically; an immediate auto-start can catch the camera
+       mid-autoexposure/focus or the examinee still settling, baking a
+       bad baseline into the whole session since everything downstream is
+       normalized relative to it.
+    3. CALIBRATION PHASE (~7 seconds, begins on SPACE) — examinee sits
+       naturally, system samples raw yaw/pitch/roll/scale and averages
+       them into a baseline.
+    4. MONITORING PHASE — behavioral decisions are made against the
        baseline. Distance drift is detected and suppresses false
-       positives. Press 'R' to recalibrate, 'Q'/ESC to end the session.
+       positives. Press 'R' to recalibrate (returns to the ready screen
+       first), 'Q'/ESC to end the session.
 
 EVIDENCE CAPTURE NOTE:
     Because HIGH risk escalation is intentionally delayed (it requires
@@ -53,7 +61,7 @@ from analysis import (
     Calibrator, HeadPoseNormalizer,
     TemporalAnalyzer, RepetitionAnalyzer, RiskClassifier,
 )
-from monitoring import EvidenceCapture, SessionReport, FrameBuffer
+from monitoring import EvidenceCapture, SessionReport, FrameBuffer, ContinuousPoseLog
 from display import OverlayRenderer
 from connection import (
     FirebaseClient, FirestoreSessionRepository, ExamRepository,
@@ -103,6 +111,8 @@ class MonitoringSession:
         self.classifier      = RiskClassifier()
         self.evidence        = EvidenceCapture()
         self.report          = SessionReport()
+        self.pose_log        = (ContinuousPoseLog()
+                                 if OutputConfig.ENABLE_CONTINUOUS_POSE_LOG else None)
         self.renderer        = OverlayRenderer()
 
         # Frame buffer sized to the temporal window + a safety margin, so
@@ -181,6 +191,9 @@ class MonitoringSession:
 
             if DatabaseConfig.KEEP_JSON:
                 self.report.save(OutputConfig.SESSION_REPORT_FILE)
+
+            if self.pose_log is not None:
+                self.pose_log.save(OutputConfig.POSE_LOG_FILE)
 
             if DatabaseConfig.ENABLE_DB and self._firebase_client is not None:
                 _, _, _, SessionRepositoryClass = _backend_classes()
@@ -285,6 +298,36 @@ class MonitoringSession:
     # Internal: calibration phase
     # ------------------------------------------------------------------
 
+    def _wait_for_calibration_start(self) -> bool:
+        """
+        Show a live "ready" screen and block until the examinee presses
+        the start key — calibration's baseline timer no longer begins the
+        instant this phase is entered. An automatic start could catch the
+        camera mid-autoexposure/focus or the examinee still settling in,
+        silently baking a bad baseline into the whole session. Letting
+        the examinee choose the moment avoids that.
+
+        Returns:
+            True once the start key is pressed, False if cancelled.
+        """
+        print("[MonitoringSession] Get into position, then press SPACE "
+              "when you're ready to begin calibration.\n")
+
+        while True:
+            ret, frame = self.capture.read()
+            if not ret:
+                return False
+
+            display_frame = self.renderer.draw_ready_screen(frame)
+            cv2.imshow("Online Assessment Monitor — HAU", display_frame)
+
+            key = cv2.waitKey(1) & 0xFF
+            if key in HotkeyConfig.QUIT_KEYS:
+                print("[MonitoringSession] Cancelled by user.")
+                return False
+            if key == HotkeyConfig.START_CALIBRATION_KEY:
+                return True
+
     def _run_calibration_phase(self) -> bool:
         """
         Show the calibration screen and collect raw head pose + scale
@@ -293,6 +336,9 @@ class MonitoringSession:
         Returns:
             True if calibration completed normally, False if cancelled.
         """
+        if not self._wait_for_calibration_start():
+            return False
+
         print(f"[MonitoringSession] Starting calibration "
               f"({CalibrationConfig.DURATION_SECONDS:.0f}s)...")
         print("[MonitoringSession] Please sit naturally and look at the screen.\n")
@@ -427,6 +473,11 @@ class MonitoringSession:
 
         # 5. Risk classification
         risk_result = self.classifier.classify(snapshot, repetition_count)
+
+        # 5b. Continuous per-frame logging (evaluation sessions only —
+        # see OutputConfig.ENABLE_CONTINUOUS_POSE_LOG).
+        if self.pose_log is not None:
+            self.pose_log.log_sample(normalized_pose, risk_result.level, device_detected)
 
         # 6. Evidence capture + event logging on escalation
         self._handle_risk_result(risk_result, frame, device_detected, normalized_pose)
