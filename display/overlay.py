@@ -97,6 +97,50 @@ class OverlayRenderer:
 
         return frame
 
+    def draw_ready_screen(self, frame: np.ndarray) -> np.ndarray:
+        """
+        Shown before calibration actually starts (initial and every
+        re-calibration), so the examinee controls when the baseline timer
+        begins instead of it starting the instant the phase is entered.
+
+        Sampling only begins once the examinee presses the start key —
+        this exists because an automatic, immediate start can catch the
+        camera mid-autoexposure/focus adjustment or the examinee still
+        settling into their seat, both of which would bake a bad baseline
+        into the whole session (everything downstream is normalized
+        relative to it). Letting the examinee choose the moment means the
+        baseline is only ever captured once they're actually ready.
+
+        Args:
+            frame: Current BGR frame to draw onto
+
+        Returns:
+            The frame with the ready-screen overlay drawn on it
+        """
+        h, w = frame.shape[:2]
+
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (0, 0), (w, h), (0, 0, 0), -1)
+        frame = cv2.addWeighted(overlay, 0.35, frame, 0.65, 0)
+
+        self._draw_silhouette(frame, w, h, (0, 165, 255))
+
+        cv2.putText(frame, "READY TO CALIBRATE", (w // 2 - 190, 52),
+                    cv2.FONT_HERSHEY_DUPLEX, 1.1, (0, 200, 255), 2)
+        cv2.putText(frame, "Get into position and settle in before you begin",
+                    (w // 2 - 300, 84),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (235, 235, 235), 1)
+
+        prompt = "Press SPACE when you're ready to begin calibration"
+        (tw, _), _ = cv2.getTextSize(prompt, cv2.FONT_HERSHEY_DUPLEX, 0.75, 2)
+        cv2.putText(frame, prompt, (w // 2 - tw // 2, h - 96),
+                    cv2.FONT_HERSHEY_DUPLEX, 0.75, (0, 220, 0), 2)
+
+        cv2.putText(frame, "Press Q or ESC to cancel", (w // 2 - 105, h - 12),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.48, (150, 150, 150), 1)
+
+        return frame
+
     def _draw_silhouette(self, frame, w: int, h: int, color) -> None:
         """
         Draw a seated-person outline for the examinee to align to: head
