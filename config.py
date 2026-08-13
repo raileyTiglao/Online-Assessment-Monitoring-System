@@ -28,6 +28,20 @@ class DetectionConfig:
     # --- Fine-tuned model replacement ---
     # Set CUSTOM_MODEL_PATH to your .pth file once training is done.
     # Leave as None to use COCO pre-trained weights.
+    #
+    # Reverted to stock COCO 2026-08-13 (see docs/JUSTIFICATION.md #2).
+    # trained_model/selected_model_epoch2.pth (2026-08-12) — epoch 2 of the
+    # retrain on the domain-matched dataset (Open Images phone+tablet +
+    # Roboflow exam-proctoring negatives, see training/merge_roboflow_negatives.py)
+    # — initially passed the 16-frame evidence_captures/ regression test
+    # (0/15 false positives, correct true-phone detection) and was briefly
+    # deployed, but live testing then surfaced further false-positive modes
+    # the 16-frame test didn't catch (other rectangular objects, the
+    # examinee's own body at distance). Stock COCO measured zero false
+    # positives across all real-world testing conducted, including live
+    # sessions — the more reliable option despite lacking a tablet class.
+    # Hard-negative mining against this checkpoint is the planned next
+    # attempt (see Recommendations in the paper) — not yet started.
     CUSTOM_MODEL_PATH = None
     CUSTOM_NUM_CLASSES = 2         # background + 1 device class
 
@@ -150,6 +164,10 @@ class HotkeyConfig:
 
     QUIT_KEYS = [ord('q'), 27]     # 'q' or ESC ends the session
     RECALIBRATE_KEY = ord('r')     # 'r' redoes the calibration phase mid-session
+    START_CALIBRATION_KEY = ord(' ')  # SPACE begins calibration once the
+                                       # examinee is ready (see the ready
+                                       # screen shown before every
+                                       # calibration, initial or re-)
 
 
 class HeadPoseConfig:
@@ -456,6 +474,13 @@ class OutputConfig:
     SESSION_REPORT_FILE = "session_report.json"
     SCREENSHOT_COOLDOWN = 5    # Seconds between auto-captures
 
+    # Per-frame pose/risk CSV for descriptive-statistics and
+    # threshold-accuracy analysis (see monitoring/pose_log.py). Off by
+    # default — only needed for scripted evaluation sessions, not normal
+    # monitoring use.
+    ENABLE_CONTINUOUS_POSE_LOG = False
+    POSE_LOG_FILE              = "pose_log.csv"
+
     # BGR colors for OpenCV
     RISK_COLORS = {
         "LOW":      (0, 200,   0),
@@ -478,7 +503,12 @@ class DatabaseConfig:
     #                account, no billing. See LocalBackendConfig below.
     #   "firebase" = Firestore + Firebase Storage — needs a Firebase
     #                project on the Blaze plan for Storage specifically.
-    BACKEND = "local"
+    #
+    # Switched to "firebase" 2026-08-12: project "baandod-testing" is now
+    # on Blaze. Requires connection/firebase_credentials.json (Admin SDK
+    # service account key, gitignored) to exist before this works — see
+    # docs/PROJECT_STATUS.md §2.3.
+    BACKEND = "firebase"
 
     # Service account key downloaded from Firebase Console -> Project
     # Settings -> Service Accounts -> Generate new private key. Never
