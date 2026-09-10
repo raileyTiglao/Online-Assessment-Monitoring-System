@@ -15,6 +15,14 @@
         { "fieldPath": "professorUid", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "exam_code", "order": "ASCENDING" },
+        { "fieldPath": "professor_uid", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

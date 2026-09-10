@@ -9,10 +9,13 @@
 import { useEffect, useState, useCallback } from "react";
 import {
   collection, query, where, orderBy, onSnapshot,
-  doc, setDoc, serverTimestamp, updateDoc,
+  doc, setDoc, serverTimestamp,
+  getDocs, writeBatch,
 } from "firebase/firestore";
-import { db } from "../firebase";
+import { ref, deleteObject } from "firebase/storage";
+import { db, storage } from "../firebase";
 import { useAuth } from "../auth/AuthContext";
+import type { SessionDoc } from "./useSessions";
 
 export interface ExamDoc {
   code: string; // Firestore doc ID === code
@@ -90,9 +93,53 @@ export function useExams() {
     [user],
   );
 
-  const setExamActive = useCallback(async (code: string, active: boolean) => {
-    await updateDoc(doc(db, "exams", code), { active });
-  }, []);
+  // Deletes the exam doc, every session recorded under it, AND those
+  // sessions' evidence screenshots in Storage. Firestore side (exam +
+  // sessions) goes first as one batch, so the exam and its sessions
+  // disappear together, not exam-deleted-but-sessions-still-there on a
+  // failure partway through; Storage cleanup runs after, per-file and
+  // best-effort (a screenshot already missing/deleted, or one blocked by
+  // a storage.rules mismatch, is logged and skipped rather than aborting
+  // the rest of the cleanup — Firestore deletion succeeding is the part
+  // that actually matters for the dashboard). Firestore batches cap at
+  // 500 ops; fine for this app's scale, but a very high-volume exam
+  // could theoretically exceed it — not handled here.
+  const deleteExam = useCallback(async (code: string): Promise<number> => {
+    if (!user) throw new Error("Not signed in.");
 
-  return { exams, loading, error, createExam, setExamActive };
+    // Same constraint as useSessions.ts: a professor's query MUST filter
+    // on professor_uid itself, or Firestore rejects the query outright
+    // (permission-denied) rather than silently scoping it — the security
+    // rule can't prove every matched doc belongs to this professor
+    // without that filter being part of the query.
+    const sessionsBase = collection(db, "sessions");
+    const sessionsQuery = role === "admin"
+      ? query(sessionsBase, where("exam_code", "==", code))
+      : query(sessionsBase, where("exam_code", "==", code), where("professor_uid", "==", user.uid));
+    const sessionDocs = await getDocs(sessionsQuery);
+
+    const screenshotPaths = sessionDocs.docs.flatMap((d) => {
+      const session = d.data() as SessionDoc;
+      return session.events
+        .map((e) => e.screenshot_path)
+        .filter((p): p is string => Boolean(p));
+    });
+
+    const batch = writeBatch(db);
+    sessionDocs.forEach((d) => batch.delete(d.ref));
+    batch.delete(doc(db, "exams", code));
+    await batch.commit();
+
+    await Promise.all(
+      screenshotPaths.map((path) =>
+        deleteObject(ref(storage, path)).catch((err) =>
+          console.warn(`[deleteExam] Couldn't delete evidence file ${path}:`, err),
+        ),
+      ),
+    );
+
+    return sessionDocs.size;
+  }, [user, role]);
+
+  return { exams, loading, error, createExam, deleteExam };
 }

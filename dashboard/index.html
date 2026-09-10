@@ -5,6 +5,29 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OAMS Dashboard — Holy Angel University</title>
+
+    <!-- Pre-paint theme script: sets data-theme before first paint so
+         there's no flash of the wrong theme. Runs synchronously, ahead of
+         React mounting — ThemeContext's lazy initializer reads the same
+         localStorage key and will agree with whatever this already set. -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("oams-theme");
+          if (t !== "light" && t !== "dark") t = "dark";
+          document.documentElement.setAttribute("data-theme", t);
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
+      })();
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Bebas+Neue&family=Playfair+Display:wght@600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body>
     <div id="root"></div>

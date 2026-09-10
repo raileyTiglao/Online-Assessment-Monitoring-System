@@ -1,0 +1,17 @@
+{
+  "session_start": "2026-08-15T15:55:42.948192",
+  "session_end": "2026-08-15T16:02:02.607746",
+  "calibration_baseline": {
+    "yaw": 0.68,
+    "pitch": -174.93,
+    "roll": -2.03,
+    "sample_count": 55
+  },
+  "total_flagged_events": 0,
+  "high_risk_count": 0,
+  "moderate_risk_count": 0,
+  "events": [],
+  "exam_code": null,
+  "professor_uid": null,
+  "exam_title": null
+}
