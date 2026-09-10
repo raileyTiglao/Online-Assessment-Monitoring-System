@@ -20,7 +20,9 @@ import torch
 import torchvision
 from torchvision.models.detection import (
     fasterrcnn_resnet50_fpn,
-    FasterRCNN_ResNet50_FPN_Weights
+    FasterRCNN_ResNet50_FPN_Weights,
+    fasterrcnn_resnet50_fpn_v2,
+    FasterRCNN_ResNet50_FPN_V2_Weights,
 )
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 import cv2
@@ -81,10 +83,21 @@ class ObjectDetector:
             return self._load_coco_model()
 
     def _load_coco_model(self):
-        """Load Faster R-CNN with default COCO pre-trained weights."""
-        print("[ObjectDetector] Loading COCO pre-trained Faster R-CNN...")
-        weights = FasterRCNN_ResNet50_FPN_Weights.DEFAULT
-        model   = fasterrcnn_resnet50_fpn(
+        """
+        Load Faster R-CNN with default COCO pre-trained weights.
+
+        Uses the V2 weights (COCO val2017 box mAP 46.7) rather than the
+        original V1 weights (37.0) — a ~26% relative improvement, same 80
+        COCO classes (including class 77, cell phone), no scope change.
+        Re-validated against evaluation/check_evidence_frames.py before
+        this swap replaced V1 as the deployed default (see
+        docs/JUSTIFICATION.md) — V1's zero-false-positive result doesn't
+        automatically carry over just because the benchmark score is
+        higher, so this needed its own check, not an assumption.
+        """
+        print("[ObjectDetector] Loading COCO pre-trained Faster R-CNN (V2 weights)...")
+        weights = FasterRCNN_ResNet50_FPN_V2_Weights.DEFAULT
+        model   = fasterrcnn_resnet50_fpn_v2(
             weights=weights,
             min_size=DetectionConfig.DETECTION_MIN_SIZE,
             max_size=DetectionConfig.DETECTION_MAX_SIZE,
@@ -92,7 +105,8 @@ class ObjectDetector:
         model.to(self.device)
         model.eval()
 
-        # COCO class IDs, per DetectionConfig (77 = cell phone)
+        # COCO class IDs, per DetectionConfig (77 = cell phone) — same
+        # class list as V1, so no change needed here.
         self._target_ids = DetectionConfig.TARGET_CLASS_IDS
         self._name_map   = DetectionConfig.TARGET_CLASS_NAMES
 

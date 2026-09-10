@@ -1,0 +1,102 @@
+{
+  "session_start": "2026-08-16T16:13:57.772375",
+  "session_end": "2026-08-16T16:16:54.991408",
+  "calibration_baseline": {
+    "yaw": 4.9,
+    "pitch": -174.86,
+    "roll": -1.35,
+    "sample_count": 56
+  },
+  "total_flagged_events": 6,
+  "high_risk_count": 0,
+  "moderate_risk_count": 6,
+  "events": [
+    {
+      "timestamp": "2026-08-16T16:14:41.631618",
+      "risk_level": "MODERATE",
+      "yaw": -1.53,
+      "pitch": -0.23,
+      "roll": -0.2,
+      "device_detected": true,
+      "behavioral_indicator": "Normal",
+      "trigger": "Device detected 49% of window",
+      "screenshot_path": null,
+      "gaze_x": 0.01,
+      "gaze_y": 0.0051,
+      "gaze_valid": true
+    },
+    {
+      "timestamp": "2026-08-16T16:14:57.233215",
+      "risk_level": "MODERATE",
+      "yaw": 3.45,
+      "pitch": -1.3,
+      "roll": 0.39,
+      "device_detected": true,
+      "behavioral_indicator": "Normal",
+      "trigger": "Device detected 50% of window",
+      "screenshot_path": null,
+      "gaze_x": 0.0789,
+      "gaze_y": 0.0063,
+      "gaze_valid": true
+    },
+    {
+      "timestamp": "2026-08-16T16:15:25.022494",
+      "risk_level": "MODERATE",
+      "yaw": 4.73,
+      "pitch": 2.34,
+      "roll": 0.4,
+      "device_detected": true,
+      "behavioral_indicator": "Normal",
+      "trigger": "Device detected 50% of window",
+      "screenshot_path": null,
+      "gaze_x": 0.0165,
+      "gaze_y": -0.0021,
+      "gaze_valid": true
+    },
+    {
+      "timestamp": "2026-08-16T16:15:49.805837",
+      "risk_level": "MODERATE",
+      "yaw": 5.44,
+      "pitch": 3.96,
+      "roll": 0.09,
+      "device_detected": true,
+      "behavioral_indicator": "Normal",
+      "trigger": "Device detected 50% of window",
+      "screenshot_path": null,
+      "gaze_x": 0.0235,
+      "gaze_y": 0.0037,
+      "gaze_valid": true
+    },
+    {
+      "timestamp": "2026-08-16T16:16:13.816991",
+      "risk_level": "MODERATE",
+      "yaw": 4.81,
+      "pitch": 5.95,
+      "roll": 0.51,
+      "device_detected": true,
+      "behavioral_indicator": "Normal",
+      "trigger": "Device detected 49% of window",
+      "screenshot_path": null,
+      "gaze_x": -0.0243,
+      "gaze_y": -0.0011,
+      "gaze_valid": true
+    },
+    {
+      "timestamp": "2026-08-16T16:16:39.087255",
+      "risk_level": "MODERATE",
+      "yaw": 3.61,
+      "pitch": 8.14,
+      "roll": 1.2,
+      "device_detected": true,
+      "behavioral_indicator": "Normal",
+      "trigger": "Device detected 50% of window",
+      "screenshot_path": null,
+      "gaze_x": 0.0358,
+      "gaze_y": 0.0034,
+      "gaze_valid": true
+    }
+  ],
+  "exam_code": null,
+  "professor_uid": null,
+  "exam_title": null
+}

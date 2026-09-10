@@ -180,7 +180,11 @@ class HeadPoseConfig:
 
     # Angle thresholds (degrees) beyond which pose is flagged as suspicious
     YAW_THRESHOLD   = 32    # Horizontal left/right turn
-    PITCH_THRESHOLD = 10    # Downward tilt (negative pitch)
+    PITCH_THRESHOLD = 10    # Downward tilt (positive normalized pitch —
+                             # see HeadPoseNormalizer._analyse; this stale
+                             # comment previously said "negative pitch",
+                             # which doesn't match the actual check or
+                             # Session 2/10's validated real-world data)
     ROLL_THRESHOLD  = 22    # Lateral tilt
 
     # MediaPipe landmark indices used for solvePnP
@@ -466,6 +470,14 @@ class CameraConfig:
     FRAME_WIDTH  = 1280
     FRAME_HEIGHT = 720
 
+    # Flip horizontally so the examinee sees themselves as in a mirror
+    # (raw webcam feed is unmirrored by default — moving right on-screen
+    # would otherwise look like moving left). Applied once, immediately
+    # after every frame is read, so detection, pose estimation, overlay
+    # drawing, and evidence screenshots all stay consistent with each
+    # other — nothing downstream needs its own left/right adjustment.
+    MIRROR_DISPLAY = True
+
 
 class OutputConfig:
     """Output paths and display settings."""
@@ -478,7 +490,7 @@ class OutputConfig:
     # threshold-accuracy analysis (see monitoring/pose_log.py). Off by
     # default — only needed for scripted evaluation sessions, not normal
     # monitoring use.
-    ENABLE_CONTINUOUS_POSE_LOG = False
+    ENABLE_CONTINUOUS_POSE_LOG = True
     POSE_LOG_FILE              = "pose_log.csv"
 
     # BGR colors for OpenCV

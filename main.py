@@ -23,7 +23,9 @@ SESSION FLOW:
        start automatically; an immediate auto-start can catch the camera
        mid-autoexposure/focus or the examinee still settling, baking a
        bad baseline into the whole session since everything downstream is
-       normalized relative to it.
+       normalized relative to it. Before this, the examinee is also
+       prompted for their name (optional), so the dashboard shows a real
+       name instead of a raw session ID.
     3. CALIBRATION PHASE (~7 seconds, begins on SPACE) — examinee sits
        naturally, system samples raw yaw/pitch/roll/scale and averages
        them into a baseline.
@@ -132,6 +134,11 @@ class MonitoringSession:
         # though it may hold a LocalBackendClient. ---
         self._firebase_client = None
 
+        # --- Examinee display name, resolved in _resolve_examinee_name()
+        # (None if skipped) — threaded through to save_to_db() so the
+        # dashboard shows a real name instead of "Unassigned". ---
+        self._examinee_label = None
+
         # --- Frame timing for FPS display (resets on each recalibration) ---
         self._frame_count = 0
         self._timer_start = None
@@ -165,6 +172,7 @@ class MonitoringSession:
         if not self._resolve_exam_code():
             self._cleanup()
             return
+        self._resolve_examinee_name()
 
         try:
             while True:
@@ -197,7 +205,8 @@ class MonitoringSession:
 
             if DatabaseConfig.ENABLE_DB and self._firebase_client is not None:
                 _, _, _, SessionRepositoryClass = _backend_classes()
-                self.report.save_to_db(SessionRepositoryClass(self._firebase_client))
+                self.report.save_to_db(SessionRepositoryClass(self._firebase_client),
+                                        examinee_label=self._examinee_label)
 
             print(f"[MonitoringSession] Evidence screenshots captured: "
                   f"{self.evidence.capture_count}")
@@ -219,6 +228,20 @@ class MonitoringSession:
         self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, CameraConfig.FRAME_WIDTH)
         self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, CameraConfig.FRAME_HEIGHT)
         return True
+
+    def _read_frame(self):
+        """
+        Read one frame from the webcam, mirroring it first if
+        CameraConfig.MIRROR_DISPLAY is on. Every call site (ready screen,
+        calibration, monitoring loop) goes through this instead of calling
+        self.capture.read() directly, so the mirror is applied exactly
+        once and everything downstream — detection, pose estimation,
+        overlay drawing, evidence screenshots — sees the same orientation.
+        """
+        ret, frame = self.capture.read()
+        if ret and CameraConfig.MIRROR_DISPLAY:
+            frame = cv2.flip(frame, 1)
+        return ret, frame
 
     # ------------------------------------------------------------------
     # Internal: Firebase / exam code
@@ -294,6 +317,37 @@ class MonitoringSession:
 
         return True
 
+    def _resolve_examinee_name(self) -> None:
+        """
+        Prompt once for the examinee's name, so dashboard session cards
+        show a real name instead of "Unassigned" or a raw session ID.
+        Optional — an empty entry (just Enter) leaves the session
+        unlabeled, same skip behavior as _resolve_exam_code().
+
+        Only asked when a backend is actually connected — with no DB,
+        SessionReport.save_to_db() is never called, so the label would
+        never be seen anywhere.
+        """
+        if self._firebase_client is None:
+            return
+
+        entered = input("Enter student name (or press Enter to skip): ").strip()
+        if entered:
+            self._examinee_label = self._format_name(entered)
+            print(f"[MonitoringSession] Student name recorded: {self._examinee_label}")
+        else:
+            self._examinee_label = None
+
+    @staticmethod
+    def _format_name(raw: str) -> str:
+        """
+        Normalize free-typed input into a consistent display name:
+        collapses stray/repeated whitespace, then title-cases each word
+        so "juan   DELA cruz" and "Juan Dela Cruz" both render identically
+        on the dashboard regardless of how the student typed it.
+        """
+        return " ".join(raw.split()).title()
+
     # ------------------------------------------------------------------
     # Internal: calibration phase
     # ------------------------------------------------------------------
@@ -314,7 +368,7 @@ class MonitoringSession:
               "when you're ready to begin calibration.\n")
 
         while True:
-            ret, frame = self.capture.read()
+            ret, frame = self._read_frame()
             if not ret:
                 return False
 
@@ -346,7 +400,7 @@ class MonitoringSession:
         self.calibrator.start()
 
         while not self.calibrator.is_complete():
-            ret, frame = self.capture.read()
+            ret, frame = self._read_frame()
             if not ret:
                 return False
 
@@ -417,7 +471,7 @@ class MonitoringSession:
             "quit" or "recalibrate"
         """
         while True:
-            ret, frame = self.capture.read()
+            ret, frame = self._read_frame()
             if not ret:
                 print("[WARNING] Failed to read frame from webcam.")
                 return "quit"
@@ -566,7 +620,8 @@ class MonitoringSession:
             # raises), so no extra guarding needed here.
             if DatabaseConfig.ENABLE_DB and self._firebase_client is not None:
                 _, _, _, SessionRepositoryClass = _backend_classes()
-                self.report.save_to_db(SessionRepositoryClass(self._firebase_client))
+                self.report.save_to_db(SessionRepositoryClass(self._firebase_client),
+                                        examinee_label=self._examinee_label)
 
         self._committed_level = level
 

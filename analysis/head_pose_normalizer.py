@@ -28,6 +28,7 @@ from config import HeadPoseConfig, CalibrationConfig, GazeConfig
 from detection.head_pose import HeadPoseResult
 from analysis.calibration import CalibrationBaseline
 from analysis.one_euro_filter import OneEuroFilter
+import math
 import time
 
 
@@ -154,13 +155,16 @@ class HeadPoseNormalizer:
                 reason=reason,
             )
 
-        scale_ratio = self._compute_scale_ratio(head_result.scale)
-        drifted = abs(scale_ratio - 1.0) > CalibrationConfig.SCALE_DRIFT_TOLERANCE
-
         n_yaw   = self._wrap_delta(head_result.yaw   - self._baseline.yaw)
         n_pitch = self._wrap_delta(head_result.pitch - self._baseline.pitch)
         n_roll  = self._wrap_delta(head_result.roll  - self._baseline.roll)
         n_yaw, n_pitch, n_roll = self._smooth(n_yaw, n_pitch, n_roll)
+
+        # Needs n_yaw (computed above) to correct for yaw-induced
+        # foreshortening — see _compute_scale_ratio's docstring.
+        scale_ratio = self._compute_scale_ratio(head_result.scale, n_yaw)
+        drifted = abs(scale_ratio - 1.0) > CalibrationConfig.SCALE_DRIFT_TOLERANCE
+
         in_grace_period = time.time() < self._ready_at
 
         # Gaze is measured against the neutral gaze captured at calibration,
@@ -302,16 +306,33 @@ class HeadPoseNormalizer:
         """
         return (delta + 180.0) % 360.0 - 180.0
 
-    def _compute_scale_ratio(self, current_scale: float) -> float:
+    def _compute_scale_ratio(self, current_scale: float, yaw_deviation: float) -> float:
         """
         Ratio of current face scale to calibrated baseline scale.
         1.0 = same distance as calibration; >1.0 = closer; <1.0 = farther.
         Guards against division by zero if baseline scale wasn't captured
         (e.g. calibration had no valid samples).
+
+        Corrects for yaw-induced foreshortening first: "scale" is the 2D
+        inter-eye pixel distance, which shrinks as the head turns away
+        from the camera even at a completely constant distance (a face
+        photographed at an angle measures shorter eye-to-eye than the
+        same face photographed straight-on). Without this correction, a
+        sustained yaw turn large enough to be genuinely suspicious was
+        also large enough to read as "moved farther from camera," which
+        suppresses ALL suspicion checks — including the yaw suspicion
+        itself. Found via live testing: turning to look at notes/a phone
+        off to the side was silently exempting itself from detection.
+        Dividing out cos(yaw) estimates what the inter-eye distance would
+        be if facing the camera directly, isolating true distance change
+        from this rotation artifact. abs() + floor guard against the
+        correction blowing up or flipping sign at steep angles.
         """
         if self._baseline.scale <= 0 or current_scale <= 0:
             return 1.0
-        return current_scale / self._baseline.scale
+        foreshortening = max(abs(math.cos(math.radians(yaw_deviation))), 0.3)
+        corrected_scale = current_scale / foreshortening
+        return corrected_scale / self._baseline.scale
 
     def _analyse(self, yaw: float, pitch: float, roll: float) -> tuple:
         """

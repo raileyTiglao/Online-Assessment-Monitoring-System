@@ -257,3 +257,44 @@ preliminary pass didn't change that; it mainly narrowed down what kind
 of data would actually be needed to make the direction worth pursuing
 further (footage containing the actual known confounders, not just more
 of the same domain-matched negatives already partly used).
+
+### 10. Upgraded stock COCO weights from V1 to V2 (2026-08-15)
+
+**What changed:** `detection/object_detector.py`'s COCO-pretrained
+loading path (`_load_coco_model`) now uses
+`FasterRCNN_ResNet50_FPN_V2_Weights` instead of
+`FasterRCNN_ResNet50_FPN_Weights`. `_load_custom_model` (used only if
+`CUSTOM_MODEL_PATH` is ever set again) intentionally stays on the V1
+architecture, since the rejected fine-tuned checkpoints were trained on
+V1 and their weights aren't compatible with V2's different layer
+structure.
+
+**Why:** V2 is a strictly better-performing weight set for the exact
+same task — same 80 COCO classes (including class 77, cell phone), same
+input/output format, already available in the project's pinned
+`torchvision==0.16.2` with no new dependency. Verified directly against
+the installed package's own metadata: V1 (`COCO_V1`) scores 37.0 box mAP
+on COCO val2017; V2 also labeled `COCO_V1` internally but for the V2
+architecture, scores 46.7 — a ~26% relative improvement, introduced
+together with V1 in torchvision's "multi-weight API" release (0.13), so
+this isn't a bleeding-edge or unstable option.
+
+**Why this needed its own verification, not just trust in the higher
+benchmark score:** the entire basis for deploying stock COCO over either
+fine-tuned attempt is the "zero false positives across all real-world
+testing" result (see #2 above) — and that result was measured against
+V1 specifically. A higher general-purpose COCO benchmark score doesn't
+guarantee identical behavior on this project's own specific failure
+modes; the whole lesson of both fine-tuning attempts was that benchmark/
+test performance doesn't automatically transfer to real deployment
+conditions. So V2 was re-run through the same evaluation V1 was
+originally judged by, rather than assuming the mAP improvement carries
+over.
+
+**Result:** ran the actual `ObjectDetector` class (real production code
+path, not a reimplementation) against the original 16-frame evidence set
+(the same Aug 2 batch V1's zero-false-positive claim is based on, 15
+phone-free + 1 known phone frame). V2 result: 0/15 false positives,
+correct true-phone detection at 0.99 confidence — identical outcome to
+V1. The upgrade holds on the evidence this project actually cares about,
+not just on the general COCO benchmark.

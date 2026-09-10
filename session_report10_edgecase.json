@@ -1,0 +1,32 @@
+{
+  "session_start": "2026-08-16T16:33:14.921836",
+  "session_end": "2026-08-16T16:36:20.166286",
+  "calibration_baseline": {
+    "yaw": 5.95,
+    "pitch": -175.23,
+    "roll": -1.17,
+    "sample_count": 56
+  },
+  "total_flagged_events": 1,
+  "high_risk_count": 0,
+  "moderate_risk_count": 1,
+  "events": [
+    {
+      "timestamp": "2026-08-16T16:35:16.019897",
+      "risk_level": "MODERATE",
+      "yaw": -3.42,
+      "pitch": 10.77,
+      "roll": 0.59,
+      "device_detected": false,
+      "behavioral_indicator": "Looking down (+10.8\u00b0 from baseline)",
+      "trigger": "Sustained downward tilt: active 50% of window (threshold 35%)",
+      "screenshot_path": null,
+      "gaze_x": 0.0135,
+      "gaze_y": -0.0151,
+      "gaze_valid": true
+    }
+  ],
+  "exam_code": null,
+  "professor_uid": null,
+  "exam_title": null
+}
