@@ -69,6 +69,51 @@ and-forth, not filed with exact timestamps.
 - Synced all of the above into the oams-dashboard GitHub repo (deleted
   the now-merged exams.php, updated AGENT_CONTEXT.md to describe the
   new architecture) and pushed.
+- Found and fixed a real bug (not a caching/overlap issue): the theme
+  pill's CSS comment contained a stray "*/" mid-sentence
+  ("hero-grad-*/color-on-hero"), which closed the comment early and
+  silently dropped the entire .theme-pill rule, including
+  position:relative. Without it, the toggle's canvas absolutely-
+  positioned against the sidebar itself instead of the 40px pill,
+  covering all sidebar nav links and hijacking their clicks. Confirmed
+  via headless-browser introspection (Edge --headless screenshots +
+  injected diagnostic scripts) before and after the fix. Also fixed the
+  intro star-shower overlay missing pointer-events:none, which had been
+  silently swallowing clicks during its 2.6s animation.
+- Typography pass: sidebar nav switched to Bebas Neue (uppercase, thin
+  white divider per tab); page h1/h2 switched to Playfair Display, with
+  h2 dropped to weight 400 + italic and both sizes bumped while keeping
+  h1 > h2. Widened the gap between each ornate-frame's h2 label and its
+  box.
+- Inserted a placeholder HIGH-risk sample session directly into the
+  local database so the dashboard has something to show without
+  needing a real webcam run.
+- Pushed the sidebar bug fix + typography pass to the oams-dashboard
+  GitHub repo (commit 9743396).
+
+2026-08-05 — Merged teammate's eye-tracking work, added gaze to the dashboard
+--------------------------------------------------------------------
+- Pulled two new commits from origin/main on the main project repo:
+  2737bfe (head-pose scoring fix: looking up vs down no longer
+  conflated) and c5c6d5e (new eye-tracking feature: iris-based gaze
+  detection, catches glances the head pose alone wouldn't). Fast-
+  forwarded the local dashboard-rbac branch onto them, stashing and
+  restoring the large set of uncommitted local changes around the
+  merge (clean auto-merge on .gitignore/config.py/main.py, no
+  conflicts).
+- Threaded the new gaze data through to the dashboard: added
+  gaze_x/gaze_y/gaze_valid to monitoring/session_report.py's
+  FlaggedEvent and log_event(), passed them from main.py's
+  normalized_pose, added the matching columns to the events table
+  (schema.sql + a live ALTER TABLE), saved them in
+  api/save_session.php, and display them ("Gaze H"/"Gaze V") on each
+  event card in session_detail.php.
+- Committed the full accumulated local-dashboard + local-backend work
+  (78 files — this was the first commit of it) and opened PR #4
+  (raileyTiglao/Online-Assessment-Monitoring-System, dashboard-rbac ->
+  main), flagging clearly that php_backend/ is the active dashboard
+  and the earlier Firebase-based dashboard/ React app is kept only for
+  reference.
 
 Known follow-ups not yet done
 --------------------------------------------------------------------

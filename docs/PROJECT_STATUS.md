@@ -65,29 +65,47 @@ p.9 text).
 again — a device alone now reaches only MODERATE, matching the paper. HIGH
 requires dual-modal co-occurrence (or repetition, see §2.1).
 
-### 2.3 Firebase claim vs. active backend
+### 2.3 Firebase claim vs. active backend — RESOLVED 2026-08-12
 
 **Paper (Conceptual Framework p.10, Objectives p.12, Figure 1):**
 > "This session report is transmitted in real time to a **Firebase**
 > database and made accessible to the supervising professor through a
 > web-based dashboard"
 
-**Code:** `DatabaseConfig.BACKEND = "local"`. The active system is a
-locally-hosted **PHP/MySQL** stack (`php_backend/`, served via XAMPP) —
-login, role-based access (admin/professor), exam management, and a
-sessions dashboard. This was built by a teammate specifically because
-Firebase **Storage** (for evidence screenshots) requires the paid Blaze
-plan; Firestore-only code still exists (`connection/firebase_db.py`) but
-isn't what runs.
+**Code (as of 2026-08-12):** `DatabaseConfig.BACKEND = "firebase"`. The
+project (`baandod-testing`) is now on the Blaze plan, and the system is
+running the Firebase stack this claim describes — Firestore for
+sessions/exams/events, Firebase Storage for evidence screenshots, and the
+`dashboard/` React app deployed via Firebase Hosting at
+**https://baandod-testing.web.app**. The local PHP/MySQL stack
+(`php_backend/`) and its supporting code remain in the repo as a working
+`"local"` fallback (the `DatabaseConfig.BACKEND` switch still supports it)
+but is no longer the active path.
 
-This is now a substantial, deliberately-built system in its own right —
-not a stub — so it's a real design decision that needs to be reflected
-accurately, not a placeholder to note in passing.
+This was a reactivation, not a rebuild: `dashboard/`, `firestore.rules`,
+`storage.rules`, `firebase.json` Hosting config, and the Python-side
+`connection/firebase_db.py`/`firebase_storage.py` classes already existed
+from before the team diverted to PHP over the Blaze cost concern — they
+were unused, not unfinished. Verified end-to-end on the live deployment
+(not the emulator): admin login sees all sessions, professor login sees
+only their own and is server-side denied (Firestore rules, not just UI
+filtering) from loading another professor's session by direct URL, and an
+evidence screenshot uploaded via the Python Storage client renders
+correctly through `storage.rules`-gated `getDownloadURL()`.
 
-**Resolution:** update every mention of "Firebase" in the paper to
-describe the local PHP/MySQL architecture, or restore
-`BACKEND = "firebase"` and get the project onto Blaze before the paper is
-finalized.
+One local-environment note for whoever runs the Python monitoring app on
+this machine going forward: this machine's antivirus (Avast) injects an
+SSL-scanning root certificate that broke both the `requests`-based Firebase
+Auth calls and the gRPC-based Firestore calls until fixed. Fix applied:
+`pip-system-certs` installed in `venv` (patches `requests`/`urllib3` to
+trust the Windows cert store) plus `connection/grpc_ca_bundle.pem`
+(certifi + the exported Avast root) referenced via a permanent
+`GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` user environment variable (patches
+grpc's separate trust store, which `pip-system-certs` doesn't cover). Both
+fixes are machine-local; a different dev machine without this antivirus
+product may not need them, and one with a different antivirus doing the
+same kind of SSL inspection would need `grpc_ca_bundle.pem` regenerated
+with its root instead.
 
 ### 2.4 Fine-tuned model not in use
 
@@ -111,11 +129,48 @@ zero. Wiring in either checkpoint as-is, combined with the 2026-08-09
 immediate-HIGH-on-device change (§2.2), would pin every session at HIGH
 permanently. Full detail in `docs/logs.md`, 2026-08-02 entry.
 
-**Resolution:** the model needs retraining with more negative
-(person-only, no-device) examples before it can be used — this is a data
-problem, not a wiring problem. `training/download_negatives.py` exists
-for this but hasn't produced a checkpoint that passes the same
-false-positive check yet.
+**Resolution — UPDATED 2026-08-11, previous diagnosis was wrong.** The
+"never saw a negative example" root cause below is empirically false, and
+"retrain with more negatives" is not expected to fix this on its own. See
+`docs/logs.md`, 2026-08-11 entry, for the full investigation. Summary:
+
+- `openimages_voc/train/Annotations` already has 621/2620 (24%) zero-object
+  files, `val` has 110/224 (49%) — negatives were present when
+  `best_model.pth`/`final_model.pth` were trained (confirmed by file
+  timestamps: negatives added 07-27, checkpoints trained 07-28) and
+  `VOCMobileDeviceDataset` has always loaded every `.xml` in the folder
+  with no filtering, per `training/train_fasterrcnn.py`. They just didn't
+  help.
+- Evaluated all 10 per-epoch checkpoints (`trained_model/epochs/epoch_0.pth`
+  through `epoch_9.pth`) on mAP@0.5, not just the loss-selected
+  `best_model.pth`: AP@0.5 sits flat at 0.35–0.38 for every epoch, with
+  precision@0.5 never exceeding ~34% and predictions outnumbering ground
+  truth 6–15× at every single epoch. There is no better epoch hiding in
+  this run — the failure is present from epoch 0 and does not improve with
+  more training.
+- Ran `best_model.pth` against this project's own real evidence frames
+  (`evidence_captures/`, 15 phone-free + 1 with-phone) rather than Open
+  Images val data: **15/15 phone-free frames produced a false-positive
+  detection at score≥0.5** (49 boxes total, mostly 0.85–0.99 confidence,
+  each covering 10–46% of the frame — head/torso-sized, not phone-sized).
+  100% false-positive rate on the actual deployment domain, not the
+  "3–4 detections on 2 frames" originally documented (see
+  `evaluation/check_evidence_frames.py`, added for this check).
+
+**Actual likely cause:** a domain-gap / hard-negative problem, not an
+absent-negative problem. The negative images are generic Open Images
+"Person" photos — stylistically different (framing, lighting, pose,
+composition) from this project's actual webcam self-capture domain. The
+model appears to have learned "salient person-shaped foreground region"
+as the positive-class cue rather than "phone," because the negatives it
+saw during training were never *hard* negatives — i.e., a person in the
+same pose/framing/domain as the positive examples, just without a phone.
+Simply re-running `download_negatives.py` for a larger count of the same
+kind of generic Open Images negatives is unlikely to fix this; the
+negatives need to come from (or closely resemble) the actual deployment
+domain — e.g., webcam-style frames of a person at a desk, phone-free, in
+comparable framing to the positive examples — for the model to learn the
+right discriminating feature.
 
 ---
 
