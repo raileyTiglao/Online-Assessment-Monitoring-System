@@ -3,18 +3,23 @@ service firebase.storage {
   match /b/{bucket}/o {
     // evidence/{professorUid}/{sessionId}/{fileName} — HIGH-risk screenshots
     // uploaded by the Python app (Admin SDK, bypasses these rules). Readable
-    // only by the owning professor or an admin.
+    // only by the owning professor or an admin; deletable by the same two
+    // (backs the dashboard's "delete exam" cascade — see useExams.ts
+    // deleteExam). Uploads still only ever come from the Admin SDK.
     match /evidence/{professorUid}/{sessionId}/{fileName} {
-      allow read:  if request.auth != null &&
-                      (request.auth.uid == professorUid || request.auth.token.role == 'admin');
-      allow write: if false;
+      allow read:   if request.auth != null &&
+                       (request.auth.uid == professorUid || request.auth.token.role == 'admin');
+      allow create, update: if false;
+      allow delete: if request.auth != null &&
+                       (request.auth.uid == professorUid || request.auth.token.role == 'admin');
     }
 
     // evidence/_unassigned/{sessionId}/{fileName} — sessions started without
-    // a valid exam code. Admin-only visibility until/unless reassigned.
+    // a valid exam code. Admin-only visibility and deletion.
     match /evidence/_unassigned/{sessionId}/{fileName} {
-      allow read:  if request.auth != null && request.auth.token.role == 'admin';
-      allow write: if false;
+      allow read:   if request.auth != null && request.auth.token.role == 'admin';
+      allow create, update: if false;
+      allow delete: if request.auth != null && request.auth.token.role == 'admin';
     }
   }
 }

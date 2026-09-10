@@ -1,0 +1,43 @@
+[mine] Loading C:\Users\Kiyuk\Desktop\Online-Assessment-Monitoring-System\trained_model\selected_model_epoch2.pth on cuda...
+
+=== rfop (online_proctoring) ===
+  raw images: 25173, already used in training: 3456
+  ...checked 500, 0 hard negatives so far
+  ...checked 1000, 2 hard negatives so far
+  ...checked 1500, 2 hard negatives so far
+  ...checked 2000, 2 hard negatives so far
+  ...checked 2500, 2 hard negatives so far
+  ...checked 3000, 2 hard negatives so far
+  ...checked 3500, 5 hard negatives so far
+  ...checked 4000, 13 hard negatives so far
+  ...checked 4500, 13 hard negatives so far
+  ...checked 5000, 13 hard negatives so far
+  ...checked 5500, 13 hard negatives so far
+  ...checked 6000, 13 hard negatives so far
+  ...checked 6500, 13 hard negatives so far
+  ...checked 7000, 13 hard negatives so far
+  ...checked 7500, 13 hard negatives so far
+  ...checked 8000, 13 hard negatives so far
+  ...checked 8500, 15 hard negatives so far
+  ...checked 9000, 15 hard negatives so far
+  ...checked 9500, 15 hard negatives so far
+  ...checked 10000, 18 hard negatives so far
+  ...checked 10500, 20 hard negatives so far
+  ...checked 11000, 24 hard negatives so far
+  ...checked 11500, 24 hard negatives so far
+  ...checked 12000, 24 hard negatives so far
+  ...checked 12500, 27 hard negatives so far
+  ...checked 13000, 29 hard negatives so far
+  ...checked 13500, 29 hard negatives so far
+  -> checked 13768 unused true-negative frames (skipped 3456 already-used, 7949 real-phone, 0 missing jpg)
+  -> found 32 hard negatives
+
+=== rfcheat (cheating_detection) ===
+  raw images: 1798, already used in training: 1798
+  -> checked 0 unused true-negative frames (skipped 1798 already-used, 0 real-phone, 0 missing jpg)
+  -> found 0 hard negatives
+
+=== TOTAL (dry run, nothing written) ===
+  checked: 13768
+  hard negatives found: 32
+  false-positive rate on unused frames: 0.2%

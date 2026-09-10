@@ -71,3 +71,22 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Local machine-specific TLS fix (this Windows install has antivirus SSL
+# scanning — e.g. Avast — injecting a root cert that grpc's bundled trust
+# store doesn't include; this is certifi's bundle + the exported local
+# root, regenerate per-machine, don't rely on it being present elsewhere).
+connection/grpc_ca_bundle.pem
+
+# Raw Roboflow dataset used for hard-negative mining (1.6 GB, ~54k files).
+# Regenerate locally via training/merge_roboflow_negatives.py; the merged
+# output and the mining logs are what's tracked, not the raw download.
+training/roboflow_raw/
+
+# Default pose-log output, overwritten on every run (config.POSE_LOG_FILE).
+# The preserved per-session copies (pose_log_session*.csv) are tracked.
+pose_log.csv
+
+# Machine-local Claude Code state
+.claude/settings.local.json
+.claude/scheduled_tasks.lock

@@ -7,9 +7,8 @@ import { AppLayout } from "./AppLayout";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { LoginPage } from "./auth/LoginPage";
 import { DashboardHome } from "./pages/DashboardHome";
-import { SessionsListPage } from "./pages/SessionsListPage";
+import { ExamsAndSessionsPage } from "./pages/ExamsAndSessionsPage";
 import { SessionDetailPage } from "./pages/SessionDetailPage";
-import { ExamsPage } from "./pages/ExamsPage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { UnauthorizedPage } from "./pages/UnauthorizedPage";
 
@@ -23,12 +22,8 @@ export const router = createBrowserRouter([
         element: <AppLayout />,
         children: [
           { path: "/", element: <DashboardHome /> },
-          { path: "/sessions", element: <SessionsListPage /> },
+          { path: "/exams", element: <ExamsAndSessionsPage /> },
           { path: "/sessions/:sessionId", element: <SessionDetailPage /> },
-          {
-            element: <ProtectedRoute allowedRoles={["professor"]} />,
-            children: [{ path: "/exams", element: <ExamsPage /> }],
-          },
           {
             element: <ProtectedRoute allowedRoles={["admin"]} />,
             children: [{ path: "/admin/users", element: <AdminUsersPage /> }],

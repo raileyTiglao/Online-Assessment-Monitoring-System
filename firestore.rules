@@ -15,23 +15,29 @@ service cloud.firestore {
     }
 
     // exams/{examCode} — doc ID is the human-typeable code the Python
-    // monitoring app looks up directly. A professor may create/manage only
-    // exams they own.
+    // monitoring app looks up directly. A professor may create/manage/
+    // delete only exams they own; an admin may do the same for any exam.
+    // Deleting an exam also deletes its sessions (see below) — the
+    // dashboard does both as one client-side batch, not a rule concern,
+    // but both deletes have to be independently authorized here.
     match /exams/{examCode} {
       allow read:   if isAdmin() || (isProfessor() && resource.data.professorUid == request.auth.uid);
-      allow create: if isProfessor() && request.resource.data.professorUid == request.auth.uid;
+      allow create: if (isAdmin() || isProfessor()) && request.resource.data.professorUid == request.auth.uid;
       allow update: if isAdmin() ||
                        (isProfessor() && resource.data.professorUid == request.auth.uid &&
                         request.resource.data.professorUid == resource.data.professorUid);
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || (isProfessor() && resource.data.professorUid == request.auth.uid);
     }
 
-    // sessions/{sessionUid} — written only by the Python app via the Admin
-    // SDK, which bypasses these rules entirely. Client writes are always
-    // denied; reads are scoped to the owning professor or an admin.
+    // sessions/{sessionUid} — created/updated only by the Python app via
+    // the Admin SDK, which bypasses these rules entirely; client create/
+    // update is always denied. Deletion IS allowed from the client, but
+    // only by the owning professor or an admin — this is what backs the
+    // dashboard's "delete exam" cascade (see ExamsAndSessionsPage).
     match /sessions/{sessionUid} {
-      allow read:  if isAdmin() || (isProfessor() && resource.data.professor_uid == request.auth.uid);
-      allow write: if false;
+      allow read:          if isAdmin() || (isProfessor() && resource.data.professor_uid == request.auth.uid);
+      allow create, update: if false;
+      allow delete:        if isAdmin() || (isProfessor() && resource.data.professor_uid == request.auth.uid);
     }
   }
 }

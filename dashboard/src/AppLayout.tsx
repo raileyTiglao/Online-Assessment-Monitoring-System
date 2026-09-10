@@ -1,29 +1,15 @@
-// src/AppLayout.tsx — nav shell wrapping every authenticated page: role-
-// aware nav links + sign-out. Rendered by a ProtectedRoute-wrapped parent
-// route in router.tsx, so `useAuth().user` is guaranteed non-null here.
+// src/AppLayout.tsx — shell wrapping every authenticated page: fixed
+// sidebar nav + main content area. Rendered by a ProtectedRoute-wrapped
+// parent route in router.tsx. Role-aware nav links and sign-out live in
+// Sidebar.tsx.
 
-import { NavLink, Outlet } from "react-router-dom";
-import { signOut } from "firebase/auth";
-import { auth } from "./firebase";
-import { useAuth } from "./auth/AuthContext";
+import { Outlet } from "react-router-dom";
+import { Sidebar } from "./components/Sidebar";
 
 export function AppLayout() {
-  const { user, role } = useAuth();
-
   return (
     <div className="app-shell">
-      <nav className="app-nav">
-        <span className="app-nav__brand">OAMS Dashboard</span>
-        <NavLink to="/" end>Dashboard</NavLink>
-        <NavLink to="/sessions">Sessions</NavLink>
-        {role === "professor" && <NavLink to="/exams">Exams</NavLink>}
-        {role === "admin" && <NavLink to="/admin/users">Users</NavLink>}
-        <span className="app-nav__spacer" />
-        <span className="app-nav__user">{user?.email} ({role})</span>
-        <button type="button" className="button-secondary" onClick={() => signOut(auth)}>
-          Sign out
-        </button>
-      </nav>
+      <Sidebar />
       <main className="app-main">
         <Outlet />
       </main>

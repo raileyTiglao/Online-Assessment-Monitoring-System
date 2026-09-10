@@ -51,7 +51,7 @@ export function SessionDetailPage() {
 
   return (
     <div className="page">
-      <Link to="/sessions" className="back-link">&larr; All sessions</Link>
+      <Link to="/exams" className="back-link">&larr; Exams &amp; students</Link>
 
       <div className="session-detail__header">
         <RiskBadge level={overallRisk(session)} />
