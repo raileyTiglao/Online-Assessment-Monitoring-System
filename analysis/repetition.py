@@ -33,7 +33,7 @@ dozens of episodes a second and the count would be meaningless.
 =============================================================================
 """
 
-import time
+import clock
 from collections import deque
 
 from config import RepetitionConfig
@@ -70,7 +70,7 @@ class RepetitionAnalyzer:
         Feed one frame's suspicion flag and advance the episode state
         machine. Safe to call every frame; cost is O(1) amortised.
         """
-        now = time.time()
+        now = clock.now()
 
         if self._raw_since is None:
             self._raw_state = suspicious
@@ -100,7 +100,7 @@ class RepetitionAnalyzer:
     @property
     def episode_count(self) -> int:
         """Number of episodes that began within the current window."""
-        self._prune(time.time())
+        self._prune(clock.now())
         return len(self._episodes)
 
     def get_onset_timestamp(self) -> float | None:
@@ -116,7 +116,7 @@ class RepetitionAnalyzer:
         unrelated frame and present it as evidence. The newest episode is
         both representative and actually still in the buffer.
         """
-        self._prune(time.time())
+        self._prune(clock.now())
         return self._episodes[-1] if self._episodes else None
 
     def reset(self) -> None:

@@ -17,7 +17,7 @@ time HIGH risk fires, the triggering behavior itself may have ended.
 =============================================================================
 """
 
-import time
+import clock
 import cv2
 import numpy as np
 from collections import deque
@@ -50,7 +50,7 @@ class FrameBuffer:
 
     def add(self, frame: np.ndarray) -> None:
         """Store a (possibly downscaled) copy of the current frame with a timestamp."""
-        now = time.time()
+        now = clock.now()
         stored = self._downscale(frame)
         self._entries.append((now, stored))
         self._prune(now)

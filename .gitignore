@@ -28,6 +28,12 @@ session_report.json
 evidence_captures/
 evidence_live/
 
+# Docker run folders (docker-compose.yml): input videos, results, and the
+# Firebase key mounted into the container. secrets/ must never be committed.
+data/
+output/
+secrets/
+
 # Local development log — working notebook, not project documentation
 logs.md
 

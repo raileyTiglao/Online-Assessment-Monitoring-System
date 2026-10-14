@@ -9,6 +9,8 @@ Change values here instead of hunting through multiple files.
 =============================================================================
 """
 
+import os
+
 import numpy as np
 
 
@@ -557,7 +559,11 @@ class DatabaseConfig:
     # Service account key downloaded from Firebase Console -> Project
     # Settings -> Service Accounts -> Generate new private key. Never
     # commit this file — see .gitignore. Unused when BACKEND = "local".
-    FIREBASE_CREDENTIALS_PATH = "connection/firebase_credentials.json"
+    # OAMS_FIREBASE_CREDENTIALS overrides the path, so the Docker container
+    # can read the key from a mounted folder instead of baking it into the
+    # image (see docs/DOCKER.md).
+    FIREBASE_CREDENTIALS_PATH = os.environ.get("OAMS_FIREBASE_CREDENTIALS",
+                                               "connection/firebase_credentials.json")
     FIRESTORE_COLLECTION      = "sessions"
     FIRESTORE_EXAMS_COLLECTION = "exams"
     FIRESTORE_USERS_COLLECTION = "users"
