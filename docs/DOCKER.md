@@ -89,6 +89,7 @@ Running `py -3.11 main.py` with no options is unchanged: live webcam, window, pr
 
 ## Notes
 
-- **CPU only.** The image uses CPU builds of PyTorch to stay small and run on any machine; the detector falls back to CPU automatically. Live monitoring on CPU runs at a lower frame rate than on the development GPU, but all timing rules are time-based, not frame-based, so the risk classification logic is unchanged.
+- **CPU only.** The image uses CPU builds of PyTorch to stay small and run on any machine; the detector falls back to CPU automatically. Faster R-CNN is slow on CPU: replaying a recording takes roughly 13 times its length (a 32-second test video took about 7 minutes), so use a short clip for a quick check. Results do not depend on speed, because replays measure every duration in video time. Live monitoring on CPU runs at a lower frame rate than on the development GPU, but all timing rules are time-based, not frame-based, so the risk classification logic is unchanged.
+- **Package versions.** `requirements-lock.txt` pins the exact packages from the development environment and the image installs them as listed; the note at the top of that file explains why pip cannot resolve them on its own.
 - **Rebuilding.** After changing the code, add `--build` to the command (as above) so the image is rebuilt.
 - **Cleaning up.** `docker compose down` stops the dashboard; `docker image rm oams-monitor oams-dashboard` removes the images.
