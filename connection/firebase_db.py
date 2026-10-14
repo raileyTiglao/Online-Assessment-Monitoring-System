@@ -1,8 +1,10 @@
 """connection/firebase_db.py — Firebase (Firestore) connection + session persistence."""
 
+from datetime import datetime, timedelta
+
 import firebase_admin
 from firebase_admin import credentials, firestore
-from config import DatabaseConfig
+from config import DatabaseConfig, RetentionConfig
 
 
 class FirebaseClient:
@@ -42,6 +44,13 @@ class FirestoreSessionRepository:
         document = dict(report)
         document["session_uid"] = session_uid
         document["examinee_label"] = examinee_label
+
+        # Read by the Firestore TTL policy on this field, which deletes the
+        # record once the retention period has passed. Anchored to the
+        # session's start (naive local time, made timezone-aware here) so
+        # repeated mid-session saves don't keep pushing the date back.
+        started = datetime.fromisoformat(report["session_start"]).astimezone()
+        document["expire_at"] = started + timedelta(days=RetentionConfig.EVIDENCE_RETENTION_DAYS)
 
         self._db.collection(DatabaseConfig.FIRESTORE_COLLECTION) \
             .document(session_uid).set(document)

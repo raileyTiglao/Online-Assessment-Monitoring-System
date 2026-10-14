@@ -26,6 +26,7 @@ trained_model/
 # Session outputs (generated at runtime, not source code)
 session_report.json
 evidence_captures/
+evidence_live/
 
 # Local development log — working notebook, not project documentation
 logs.md
