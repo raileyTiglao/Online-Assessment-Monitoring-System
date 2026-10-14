@@ -482,7 +482,11 @@ class CameraConfig:
 class OutputConfig:
     """Output paths and display settings."""
 
-    SCREENSHOT_DIR      = "evidence_captures"
+    # Live evidence goes to its own folder, separate from evidence_captures/.
+    # evidence_captures/ holds the fixed research evaluation frames used by
+    # evaluation/check_evidence_frames.py (gitignored, so no other copy
+    # exists) and must never be touched by the retention purge below.
+    SCREENSHOT_DIR      = "evidence_live"
     SESSION_REPORT_FILE = "session_report.json"
     SCREENSHOT_COOLDOWN = 5    # Seconds between auto-captures
 
@@ -499,6 +503,34 @@ class OutputConfig:
         "MODERATE": (0, 165, 255),
         "HIGH":     (0,   0, 255),
     }
+
+
+class RetentionConfig:
+    """
+    How long evidence screenshots (images of an examinee's face) are kept.
+
+    Evidence exists only to support a proctor's review of a flagged
+    session, so it is deleted once that review window has passed rather
+    than kept indefinitely. Three copies are covered:
+
+      - Firebase Storage images: deleted by the bucket lifecycle rule in
+        storage.lifecycle.json (its "age" MUST equal EVIDENCE_RETENTION_DAYS).
+      - Firestore session records: deleted by a TTL policy on "expire_at",
+        which FirestoreSessionRepository stamps on every session.
+      - Local copies on the examinee's machine: deleted right after a
+        successful upload, and any left behind (failed uploads) are purged
+        at startup once older than EVIDENCE_RETENTION_DAYS.
+
+    The two cloud policies are one-time project settings, not code — see
+    docs/PROJECT_SETUP.md, "Evidence retention".
+    """
+
+    EVIDENCE_RETENTION_DAYS   = 30
+    DELETE_LOCAL_AFTER_UPLOAD = True
+
+    # Folders the local purge refuses to touch, whatever SCREENSHOT_DIR is
+    # set to. evidence_captures/ is irreplaceable research data.
+    PROTECTED_DIRS = ("evidence_captures",)
 
 
 class SystemConfig:
