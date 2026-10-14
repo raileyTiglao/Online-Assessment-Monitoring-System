@@ -100,9 +100,12 @@ and doesn't affect what's currently deployed (`CUSTOM_MODEL_PATH` stays
   globally on the new PC
 
 **6. Session-generated files**
-- `session_report.json`, `evidence_captures/`, and (once used)
+- `session_report.json`, `evidence_live/`, and (once used)
   `pose_log.csv` are all runtime output, not source — don't need to be
   brought over, and will only appear locally as sessions are run
+- `evidence_captures/` is different: it holds the 16 research evaluation
+  frames used by `evaluation/check_evidence_frames.py` and has no other
+  copy (gitignored). Copy it over manually if that test is needed.
 
 ---
 
@@ -120,6 +123,35 @@ account signed in on the new PC, not any copying:
 - **Firebase project** `baandod-testing` — Firebase Console access for
   credentials, Firestore data, deployed hosting
   (`https://baandod-testing.web.app`)
+
+### Evidence retention (one-time project setup)
+
+Evidence screenshots show examinees' faces, so they are deleted after
+`RetentionConfig.EVIDENCE_RETENTION_DAYS` (30 days, `config.py`). The code
+handles local copies and stamps `expire_at` on each session record, but the
+two cloud deletions are project settings that must be switched on once
+with the Google Cloud CLI (`gcloud auth login` first):
+
+```
+gcloud storage buckets update gs://baandod-testing.firebasestorage.app --lifecycle-file=storage.lifecycle.json
+gcloud firestore fields ttls update expire_at --collection-group=sessions --enable-ttl --project=baandod-testing
+```
+
+- The first applies `storage.lifecycle.json`: images under `evidence/`
+  are deleted 30 days after upload.
+- The second enables a TTL policy: session records are deleted after
+  their `expire_at` date. Firestore removes expired records within about
+  24 hours of expiry, not at the exact moment.
+- If the retention period changes, update both
+  `RetentionConfig.EVIDENCE_RETENTION_DAYS` and `"age"` in
+  `storage.lifecycle.json` so the images and records expire together.
+- The lifecycle rule also applies to images already in the bucket: every
+  evidence image older than 30 days is deleted within about a day of
+  running the first command. Don't apply it until any existing sessions
+  needed for a demo or defense are no longer needed.
+- Sessions saved before this change have no `expire_at`, so the TTL
+  policy never deletes them. Delete those exams from the dashboard (which
+  also deletes their sessions and images) once they are no longer needed.
 
 ---
 

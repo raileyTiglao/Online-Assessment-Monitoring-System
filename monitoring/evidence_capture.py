@@ -11,11 +11,12 @@ while the examinee remains in a high-risk state.
 """
 
 import os
+import glob
 import time
 import cv2
 import numpy as np
 from datetime import datetime
-from config import DatabaseConfig, OutputConfig
+from config import DatabaseConfig, OutputConfig, RetentionConfig
 
 
 class EvidenceCapture:
@@ -44,6 +45,7 @@ class EvidenceCapture:
         self._uploader = None
 
         self._ensure_output_dir()
+        self._purge_expired_local_copies()
 
     # ------------------------------------------------------------------
     # Public API
@@ -112,12 +114,37 @@ class EvidenceCapture:
             os.makedirs(self._output_dir)
             print(f"[EvidenceCapture] Created directory: {self._output_dir}/")
 
+    def _purge_expired_local_copies(self) -> None:
+        """
+        Delete local evidence screenshots older than
+        RetentionConfig.EVIDENCE_RETENTION_DAYS. After a successful upload
+        the local copy is already gone, so this only catches copies left
+        behind by failed uploads or runs without a database.
+        """
+        folder = os.path.basename(os.path.normpath(self._output_dir))
+        if folder in RetentionConfig.PROTECTED_DIRS:
+            print(f"[EvidenceCapture][WARN] Not purging protected folder "
+                  f"{self._output_dir}/ — see RetentionConfig.PROTECTED_DIRS.")
+            return
+
+        cutoff = time.time() - RetentionConfig.EVIDENCE_RETENTION_DAYS * 86400
+        removed = 0
+        for path in glob.glob(os.path.join(self._output_dir, "high_risk_*.jpg")):
+            if os.path.getmtime(path) < cutoff:
+                os.remove(path)
+                removed += 1
+        if removed:
+            print(f"[EvidenceCapture] Retention: deleted {removed} local screenshot(s) "
+                  f"older than {RetentionConfig.EVIDENCE_RETENTION_DAYS} days.")
+
     def _save_screenshot(self, frame: np.ndarray) -> str:
         """
         Write the frame to disk with a timestamped filename, then upload it
         to Firebase Storage if a context/uploader has been set (see
-        set_context()). The local copy is always kept as a fallback/debug
-        artifact regardless of upload outcome.
+        set_context()). Once the upload succeeds the local copy is deleted
+        (RetentionConfig.DELETE_LOCAL_AFTER_UPLOAD), so the only copy is the
+        access-controlled one in Storage. If the upload fails, the local copy
+        is kept as a fallback until the retention purge removes it.
 
         Returns:
             The Storage object path if upload succeeded, otherwise the
@@ -144,6 +171,8 @@ class EvidenceCapture:
             # LocalStorageUploader.upload's docstring), which can differ.
             stored_path = self._uploader.upload(filepath, dest_path)
             print(f"[EvidenceCapture] Uploaded to Storage: {stored_path}")
+            if RetentionConfig.DELETE_LOCAL_AFTER_UPLOAD:
+                os.remove(filepath)
             return stored_path
         except Exception as exc:
             print(f"[EvidenceCapture][WARN] Storage upload failed ({exc}). "
