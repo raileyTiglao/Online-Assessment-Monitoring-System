@@ -29,7 +29,7 @@ from detection.head_pose import HeadPoseResult
 from analysis.calibration import CalibrationBaseline
 from analysis.one_euro_filter import OneEuroFilter
 import math
-import time
+import clock
 
 
 @dataclass
@@ -108,7 +108,7 @@ class HeadPoseNormalizer:
         self._roll_filter  = OneEuroFilter(HeadPoseConfig.FILTER_MIN_CUTOFF,
                                            HeadPoseConfig.FILTER_BETA,
                                            HeadPoseConfig.FILTER_D_CUTOFF)
-        self._ready_at = time.time() + CalibrationConfig.POST_CALIBRATION_GRACE_SECONDS
+        self._ready_at = clock.now() + CalibrationConfig.POST_CALIBRATION_GRACE_SECONDS
 
         # Last successfully tracked normalized pose, used to decide whether a
         # subsequent tracking dropout should count as suspicious (see
@@ -165,7 +165,7 @@ class HeadPoseNormalizer:
         scale_ratio = self._compute_scale_ratio(head_result.scale, n_yaw)
         drifted = abs(scale_ratio - 1.0) > CalibrationConfig.SCALE_DRIFT_TOLERANCE
 
-        in_grace_period = time.time() < self._ready_at
+        in_grace_period = clock.now() < self._ready_at
 
         # Gaze is measured against the neutral gaze captured at calibration,
         # so what counts is deviation from where this examinee naturally

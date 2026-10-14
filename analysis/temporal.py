@@ -16,7 +16,7 @@ settings.
 =============================================================================
 """
 
-import time
+import clock
 from collections import deque
 from dataclasses import dataclass
 from config import TemporalConfig
@@ -99,7 +99,7 @@ class TemporalAnalyzer:
         its own threshold; the blended "any axis" signal is derived at
         snapshot time rather than stored.
         """
-        now = time.time()
+        now = clock.now()
         self._entries.append((now, device_detected, yaw_suspicious,
                               pitch_suspicious, roll_suspicious,
                               dropout_suspicious, gaze_suspicious))

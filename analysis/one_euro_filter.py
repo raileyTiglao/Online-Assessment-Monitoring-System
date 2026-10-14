@@ -13,7 +13,7 @@ too jittery when still or too laggy when moving.
 """
 
 import math
-import time
+import clock
 
 
 class OneEuroFilter:
@@ -34,7 +34,7 @@ class OneEuroFilter:
         return 1.0 / (1.0 + tau / dt)
 
     def __call__(self, x: float) -> float:
-        now = time.time()
+        now = clock.now()
         if self._x_prev is None:
             self._x_prev, self._t_prev = x, now
             return x

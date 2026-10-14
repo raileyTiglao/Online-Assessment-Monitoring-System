@@ -1,0 +1,44 @@
+# Online Assessment Monitoring System — see docs/DOCKER.md
+#
+#   docker compose up dashboard              web dashboard on http://localhost:8080
+#   docker compose run --rm monitor-video    replay data/session.mp4 (any OS)
+#   docker compose run --rm monitor-live     live webcam + window (Linux hosts only)
+#
+# The Firebase key is optional. Put it at secrets/firebase_credentials.json
+# to save sessions to the dashboard; without it the monitor still runs and
+# writes its report to output/.
+
+services:
+  dashboard:
+    build: ./dashboard
+    image: oams-dashboard
+    ports:
+      - "8080:80"
+
+  monitor-video:
+    build: .
+    image: oams-monitor
+    profiles: ["monitor"]
+    command: ["--source", "/data/${VIDEO:-session.mp4}", "--headless", "--output-dir", "/output"]
+    volumes:
+      - ./data:/data:ro
+      - ./output:/output
+      - ./secrets:/secrets:ro
+
+  monitor-live:
+    build: .
+    image: oams-monitor
+    profiles: ["live"]
+    command: ["--output-dir", "/output"]
+    # Interactive: the exam-code and student-name prompts are typed here.
+    stdin_open: true
+    tty: true
+    devices:
+      - /dev/video0:/dev/video0
+    environment:
+      DISPLAY: ${DISPLAY:-:0}
+      QT_X11_NO_MITSHM: "1"
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ./output:/output
+      - ./secrets:/secrets:ro
