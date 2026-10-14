@@ -18,7 +18,7 @@ sessions aren't slowed down or bloated by a file no one needs.
 """
 
 import csv
-import time
+import clock
 from typing import Optional
 
 
@@ -47,7 +47,7 @@ class ContinuousPoseLog:
     ]
 
     def __init__(self):
-        self._session_start = time.time()
+        self._session_start = clock.now()
         self._current_label = ""
         self._rows: list[dict] = []
 
@@ -63,7 +63,7 @@ class ContinuousPoseLog:
                    device_detected: bool) -> None:
         """Append one row for the current frame."""
         self._rows.append({
-            "elapsed_seconds":    round(time.time() - self._session_start, 3),
+            "elapsed_seconds":    round(clock.now() - self._session_start, 3),
             "scenario_label":     self._current_label,
             "raw_yaw":            round(normalized_pose.raw_yaw, 2),
             "raw_pitch":          round(normalized_pose.raw_pitch, 2),

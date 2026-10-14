@@ -12,6 +12,7 @@ while the examinee remains in a high-risk state.
 
 import os
 import time
+import clock
 import cv2
 import numpy as np
 from datetime import datetime
@@ -88,7 +89,7 @@ class EvidenceCapture:
         if risk_level != "HIGH":
             return None
 
-        now = time.time()
+        now = clock.now()
         if (now - self._last_capture_time) < self._cooldown:
             return None  # Still in cooldown period
 
@@ -124,7 +125,7 @@ class EvidenceCapture:
             local filesystem path (unchanged legacy behavior when no
             uploader is configured, or if the upload itself fails).
         """
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.fromtimestamp(clock.now()).strftime("%Y%m%d_%H%M%S")
         filename  = f"high_risk_{timestamp}.jpg"
         filepath  = os.path.join(self._output_dir, filename)
 

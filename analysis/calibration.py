@@ -19,7 +19,7 @@ calibration — a condition under which normalized angles become unreliable
 """
 
 import math
-import time
+import clock
 import statistics
 from dataclasses import dataclass
 from config import CalibrationConfig
@@ -96,7 +96,7 @@ class Calibrator:
 
     def start(self) -> None:
         """Begin (or restart) the calibration timer and clear samples."""
-        self._start_time = time.time()
+        self._start_time = clock.now()
         self._yaw_samples.clear()
         self._pitch_samples.clear()
         self._roll_samples.clear()
@@ -195,7 +195,7 @@ class Calibrator:
         """Seconds elapsed since calibration started."""
         if self._start_time is None:
             return 0.0
-        return time.time() - self._start_time
+        return clock.now() - self._start_time
 
     def remaining_seconds(self) -> float:
         """Seconds left until calibration completes."""

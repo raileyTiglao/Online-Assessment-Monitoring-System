@@ -1,0 +1,44 @@
+# Keeps secrets, research data and large folders out of the monitor image.
+
+# Secrets — supplied at runtime through the secrets/ mount, never baked in
+secrets/
+connection/firebase_credentials.json
+*firebase-adminsdk*.json
+*serviceAccount*.json
+connection/grpc_ca_bundle.pem
+.env
+.env.*
+
+# Local environments and caches
+venv/
+venv_download/
+env/
+.venv/
+**/__pycache__/
+*.pyc
+.git/
+.claude/
+
+# The dashboard has its own image (dashboard/Dockerfile)
+dashboard/
+
+# Models and datasets (the deployed COCO weights download during the build)
+trained_model*/
+openimages_voc/
+training/roboflow_raw/
+*.pth
+*.pt
+
+# Research data and runtime output
+evidence_captures/
+evidence_live/
+session_report*.json
+pose_log*.csv
+data/
+output/
+*.mp4
+*.avi
+*.mkv
+
+# Not used by the monitor
+php_backend/

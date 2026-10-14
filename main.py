@@ -45,13 +45,29 @@ EVIDENCE CAPTURE NOTE:
     live current frame.
 
 HOW TO RUN:
-    py -3.11 main.py
+    py -3.11 main.py                       live webcam, with a window
+
+    py -3.11 main.py --source session.mp4 --headless --output-dir output
+        Replays a recorded session through the same pipeline with no
+        window or keyboard: calibration starts on its own, the annotated
+        video, report, pose log and evidence go to the output folder, and
+        timing follows the video's own timestamps (see clock.py). This is
+        the mode the Docker container uses on hosts that can't share a
+        webcam or display with it — see docs/DOCKER.md.
+
+    Other options: --exam-code CODE and --name NAME answer the startup
+    prompts in advance, and --no-db runs without Firebase.
 =============================================================================
 """
 
- #Test
+import argparse
+import os
+import signal
+
 import cv2
 import time
+
+import clock
 
 from config import (
     CameraConfig, OutputConfig, DetectionConfig,
@@ -97,11 +113,50 @@ class MonitoringSession:
         session.run()
     """
 
-    def __init__(self):
+    WINDOW_TITLE = "Online Assessment Monitor — HAU"
+
+    def __init__(self, source: str = None, headless: bool = False,
+                 output_dir: str = None, exam_code: str = None,
+                 examinee_name: str = None, use_db: bool = True):
+        """
+        Args:
+            source:        Video file to replay instead of the webcam.
+            headless:      No window or keyboard; frames are written to an
+                           annotated video in output_dir instead.
+            output_dir:    Folder for the report, pose log, evidence and
+                           annotated video (default: the usual paths in
+                           OutputConfig, relative to the working folder).
+            exam_code:     Answers the exam-code prompt in advance.
+            examinee_name: Answers the student-name prompt in advance.
+            use_db:        False runs without Firebase (JSON report only).
+        """
         print("\n" + "=" * 60)
         print("  Online Assessment Monitoring System")
         print("  Holy Angel University — School of Computing")
         print("=" * 60 + "\n")
+
+        self._source        = source
+        self._headless      = headless
+        self._output_dir    = output_dir
+        self._exam_code_arg = exam_code
+        self._name_arg      = examinee_name
+
+        # Applied before any component is built, since EvidenceCapture
+        # creates its folder on construction.
+        if not use_db:
+            DatabaseConfig.ENABLE_DB = False
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+            OutputConfig.SESSION_REPORT_FILE = os.path.join(output_dir, "session_report.json")
+            OutputConfig.POSE_LOG_FILE       = os.path.join(output_dir, "pose_log.csv")
+            OutputConfig.SCREENSHOT_DIR      = os.path.join(output_dir, "evidence")
+
+        # Replay state (only used with --source) and the annotated-video
+        # writer (only used with --headless).
+        self._video_fps    = None
+        self._video_t0     = 0.0
+        self._video_frames = 0
+        self._writer       = None
 
         # --- Core components ---
         self.detector        = ObjectDetector()
@@ -217,7 +272,22 @@ class MonitoringSession:
     # ------------------------------------------------------------------
 
     def _open_camera(self) -> bool:
-        """Open the webcam using settings from CameraConfig."""
+        """Open the webcam using settings from CameraConfig, or the --source video."""
+        if self._source:
+            self.capture = cv2.VideoCapture(self._source)
+            if not self.capture.isOpened():
+                print(f"[ERROR] Could not open video file: {self._source}")
+                return False
+            fps = self.capture.get(cv2.CAP_PROP_FPS)
+            self._video_fps = fps if fps and fps > 0 else 30.0
+            self._video_t0 = time.time()
+            # Switch the session clock to video time now, before any
+            # component (e.g. the calibrator) reads a start time from it.
+            clock.set_video_time(self._video_t0)
+            print(f"[MonitoringSession] Replaying {self._source} "
+                  f"({self._video_fps:.1f} fps).")
+            return True
+
         self.capture = cv2.VideoCapture(CameraConfig.CAMERA_INDEX)
 
         if not self.capture.isOpened():
@@ -237,11 +307,43 @@ class MonitoringSession:
         self.capture.read() directly, so the mirror is applied exactly
         once and everything downstream — detection, pose estimation,
         overlay drawing, evidence screenshots — sees the same orientation.
+
+        When replaying a video, also advances the session clock to this
+        frame's timestamp, so every timing rule measures video time.
         """
         ret, frame = self.capture.read()
+        if ret and self._video_fps:
+            self._video_frames += 1
+            clock.set_video_time(self._video_t0 + self._video_frames / self._video_fps)
         if ret and CameraConfig.MIRROR_DISPLAY:
             frame = cv2.flip(frame, 1)
         return ret, frame
+
+    def _show(self, frame) -> None:
+        """Show a frame in the window, or append it to the annotated video when headless."""
+        if not self._headless:
+            cv2.imshow(self.WINDOW_TITLE, frame)
+            return
+
+        if self._writer is None:
+            folder = self._output_dir or "."
+            stem = (os.path.splitext(os.path.basename(self._source))[0]
+                    if self._source else "webcam_session")
+            path = os.path.join(folder, f"{stem}_annotated.mp4")
+            height, width = frame.shape[:2]
+            # A live webcam has no fixed rate to copy; 10 fps roughly
+            # matches the pipeline's CPU throughput.
+            fps = self._video_fps or 10.0
+            self._writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"mp4v"),
+                                           fps, (width, height))
+            print(f"[MonitoringSession] Writing annotated video to {path}")
+        self._writer.write(frame)
+
+    def _poll_key(self) -> int:
+        """Next key press, or -1. Headless runs have no keyboard."""
+        if self._headless:
+            return -1
+        return cv2.waitKey(1) & 0xFF
 
     # ------------------------------------------------------------------
     # Internal: Firebase / exam code
@@ -286,7 +388,8 @@ class MonitoringSession:
         _, ExamRepositoryClass, UploaderClass, _ = _backend_classes()
 
         if self._firebase_client is not None:
-            entered = input("Enter exam code (or press Enter to skip): ").strip()
+            entered = self._ask("Enter exam code (or press Enter to skip): ",
+                                self._exam_code_arg)
             if entered:
                 exam = ExamRepositoryClass(self._firebase_client).get_exam(entered)
                 if exam:
@@ -331,12 +434,25 @@ class MonitoringSession:
         if self._firebase_client is None:
             return
 
-        entered = input("Enter student name (or press Enter to skip): ").strip()
+        entered = self._ask("Enter student name (or press Enter to skip): ",
+                            self._name_arg)
         if entered:
             self._examinee_label = self._format_name(entered)
             print(f"[MonitoringSession] Student name recorded: {self._examinee_label}")
         else:
             self._examinee_label = None
+
+    def _ask(self, prompt: str, preset: str = None) -> str:
+        """
+        Answer a startup prompt: the value given on the command line if
+        any, otherwise ask on the console. Headless runs never wait for
+        typed input, so an unanswered prompt there counts as skipped.
+        """
+        if preset is not None:
+            return preset.strip()
+        if self._headless:
+            return ""
+        return input(prompt).strip()
 
     @staticmethod
     def _format_name(raw: str) -> str:
@@ -361,9 +477,17 @@ class MonitoringSession:
         silently baking a bad baseline into the whole session. Letting
         the examinee choose the moment avoids that.
 
+        Headless runs have no one to press the key, so calibration starts
+        straight away; CalibrationConfig.SETTLE_SECONDS still discards the
+        first moments of samples.
+
         Returns:
             True once the start key is pressed, False if cancelled.
         """
+        if self._headless:
+            print("[MonitoringSession] Headless run: starting calibration automatically.\n")
+            return True
+
         print("[MonitoringSession] Get into position, then press SPACE "
               "when you're ready to begin calibration.\n")
 
@@ -373,9 +497,9 @@ class MonitoringSession:
                 return False
 
             display_frame = self.renderer.draw_ready_screen(frame)
-            cv2.imshow("Online Assessment Monitor — HAU", display_frame)
+            self._show(display_frame)
 
-            key = cv2.waitKey(1) & 0xFF
+            key = self._poll_key()
             if key in HotkeyConfig.QUIT_KEYS:
                 print("[MonitoringSession] Cancelled by user.")
                 return False
@@ -424,9 +548,9 @@ class MonitoringSession:
                 self.calibrator.status_ok = False
 
             display_frame = self.renderer.draw_calibration(frame, self.calibrator)
-            cv2.imshow("Online Assessment Monitor — HAU", display_frame)
+            self._show(display_frame)
 
-            key = cv2.waitKey(1) & 0xFF
+            key = self._poll_key()
             if key in HotkeyConfig.QUIT_KEYS:
                 print("[MonitoringSession] Calibration cancelled by user.")
                 return False
@@ -454,9 +578,9 @@ class MonitoringSession:
         self.frame_buffer.reset()
         self._committed_level = "LOW"
         self._pending_level = "LOW"
-        self._pending_since = time.time()
+        self._pending_since = clock.now()
         self._frame_count = 0
-        self._timer_start = time.time()
+        self._timer_start = time.time()   # wall clock: FPS shows processing speed
 
     # ------------------------------------------------------------------
     # Internal: monitoring main loop
@@ -473,13 +597,16 @@ class MonitoringSession:
         while True:
             ret, frame = self._read_frame()
             if not ret:
-                print("[WARNING] Failed to read frame from webcam.")
+                if self._source:
+                    print("\n[MonitoringSession] End of video.")
+                else:
+                    print("[WARNING] Failed to read frame from webcam.")
                 return "quit"
 
             self._frame_count += 1
             self._process_frame(frame)
 
-            key = cv2.waitKey(1) & 0xFF
+            key = self._poll_key()
             if key in HotkeyConfig.QUIT_KEYS:
                 print("\n[MonitoringSession] Session ended by user.")
                 return "quit"
@@ -552,7 +679,7 @@ class MonitoringSession:
             repetition_count=repetition_count,
         )
 
-        cv2.imshow("Online Assessment Monitor — HAU", frame)
+        self._show(frame)
 
     def _run_detection_with_skip(self, frame) -> tuple:
         """Run Faster R-CNN only every DETECTION_FRAME_SKIP frames."""
@@ -586,7 +713,7 @@ class MonitoringSession:
         the current (possibly already-normal) frame.
         """
         level = risk_result.level
-        now = time.time()
+        now = clock.now()
 
         if level != self._pending_level:
             self._pending_level = level
@@ -668,10 +795,13 @@ class MonitoringSession:
         return self._frame_count / elapsed
 
     def _cleanup(self) -> None:
-        """Release all resources (camera, windows, MediaPipe)."""
+        """Release all resources (camera, windows, video writer, MediaPipe)."""
         if self.capture is not None:
             self.capture.release()
-        cv2.destroyAllWindows()
+        if self._writer is not None:
+            self._writer.release()
+        if not self._headless:
+            cv2.destroyAllWindows()
         self.pose_estimator.close()
 
 
@@ -679,6 +809,42 @@ class MonitoringSession:
 # ENTRY POINT
 # =============================================================================
 
+def _parse_args():
+    parser = argparse.ArgumentParser(
+        description="Online Assessment Monitoring System. With no options, monitors "
+                    "the live webcam in a window. See docs/DOCKER.md for the video mode.")
+    parser.add_argument("--source", metavar="VIDEO",
+                        help="replay a recorded video instead of the webcam")
+    parser.add_argument("--headless", action="store_true",
+                        help="no window or keyboard; write an annotated video instead")
+    parser.add_argument("--output-dir", metavar="DIR",
+                        help="folder for the report, pose log, evidence and annotated video")
+    parser.add_argument("--exam-code", help="exam code, instead of the startup prompt")
+    parser.add_argument("--name", help="student name, instead of the startup prompt")
+    parser.add_argument("--no-db", action="store_true",
+                        help="run without Firebase (JSON report only)")
+    return parser.parse_args()
+
+
+def _stop_on_sigterm(signum, frame):
+    # `docker stop` sends SIGTERM. Treat it like a user quit so the
+    # finally block in run() still saves the report and closes the video.
+    raise KeyboardInterrupt
+
+
 if __name__ == "__main__":
-    session = MonitoringSession()
-    session.run()
+    args = _parse_args()
+    signal.signal(signal.SIGTERM, _stop_on_sigterm)
+
+    session = MonitoringSession(
+        source=args.source,
+        headless=args.headless,
+        output_dir=args.output_dir or ("output" if args.headless else None),
+        exam_code=args.exam_code,
+        examinee_name=args.name,
+        use_db=not args.no_db,
+    )
+    try:
+        session.run()
+    except KeyboardInterrupt:
+        print("\n[MonitoringSession] Stopped.")
